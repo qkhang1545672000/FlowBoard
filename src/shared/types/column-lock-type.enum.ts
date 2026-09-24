@@ -1,0 +1,5 @@
+export enum ColumnLockType {
+  UNLOCKED = 'UNLOCKED',
+  FULLY_LOCKED = 'FULLY_LOCKED',
+  ONE_WAY_LOCKED = 'ONE_WAY_LOCKED',
+}

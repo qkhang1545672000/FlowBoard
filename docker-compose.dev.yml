@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: FlowBoard-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: FlowBoard_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - FlowBoard-pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: FlowBoard-redis
+    restart: always
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379' # Đã đổi về cổng chuẩn 6379 (hoặc giữ 36379 nếu bạn cố tình đổi)
+    volumes:
+      - FlowBoard-redisdata:/data
+
+volumes:
+  FlowBoard-pgdata:
+  FlowBoard-redisdata: # Đã sửa lại đúng tên (bỏ chữ 'r' thừa)
