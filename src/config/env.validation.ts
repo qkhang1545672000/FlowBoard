@@ -22,6 +22,10 @@ export const envSchema = z.object({
   DB_POOL_MIN: z.coerce.number().default(2),
   DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().default(5000),
   DB_POOL_IDLE_TIMEOUT_MS: z.coerce.number().default(3000),
+  SMTP_USER: z.string().trim().min(1),
+  SMTP_PASS: z.string().trim().min(1),
+  SMTP_FROM: z.string().trim().min(1),
+  INTERNAL_API_SECRET: z.string().trim().min(1),
   BETTER_AUTH_SECRET: z
     .string()
     .min(1)

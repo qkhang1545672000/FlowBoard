@@ -29,7 +29,7 @@ export class Task extends BaseUuidEntity {
   assigneeId: string | null;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
-  @JoinColumn({ name: 'assigneeId' })
+  @JoinColumn({ name: 'assignee_id' })
   assignee: User | null;
 
   @Column({ type: 'text' })
@@ -57,8 +57,8 @@ export class Task extends BaseUuidEntity {
   @ManyToMany(() => Label, (label) => label.tasks)
   @JoinTable({
     name: 'task_labels',
-    joinColumn: { name: 'taskId', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'labelId', referencedColumnName: 'id' },
+    joinColumn: { name: 'task_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'label_id', referencedColumnName: 'id' },
   })
   labels: Label[];
 }

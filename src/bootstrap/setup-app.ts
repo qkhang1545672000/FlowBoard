@@ -14,7 +14,7 @@ export function setupApp(
   // CORS
   const appCfg = config.getOrThrow<{ corsOrigins: string[] }>(APP_CONFIG);
   const allowList = appCfg.corsOrigins;
-  console.log('allowList', allowList);
+
   app.enableCors({
     origin: (requestOrigin: string, callback) => {
       if (!requestOrigin) {

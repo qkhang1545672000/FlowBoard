@@ -18,7 +18,7 @@ export class Board extends BaseUuidEntity {
   workspaceId: string;
 
   @ManyToOne(() => Workspace, (ws) => ws.boards, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'workspaceId' })
+  @JoinColumn({ name: 'workspace_id' })
   workspace: Workspace;
 
   @Column({ type: 'text' })

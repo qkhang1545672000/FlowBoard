@@ -18,14 +18,14 @@ export class WorkspaceMember extends BaseUuidEntity {
   workspaceId: string;
 
   @ManyToOne(() => Workspace, (ws) => ws.members, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'workspaceId' })
+  @JoinColumn({ name: 'workspace_id' })
   workspace: Workspace;
 
   @Column({ type: 'uuid' })
   userId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
   @Column({ type: 'enum', enum: WorkspaceRole, default: WorkspaceRole.MEMBER })

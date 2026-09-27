@@ -140,4 +140,31 @@ export class EmailService {
       html,
     });
   }
+  async sendWorkspaceInvitationEmail(
+    to: string,
+    inviterName: string,
+    workspaceName: string,
+    acceptUrl: string,
+  ): Promise<boolean> {
+    const subject = `Lời mời tham gia không gian làm việc ${workspaceName}`;
+    const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+      <h2 style="color: #0052CC;">Lời mời tham gia Workspace</h2>
+      <p>Xin chào,</p>
+      <p><strong>${inviterName}</strong> đã mời bạn tham gia vào không gian làm việc <strong>${workspaceName}</strong>.</p>
+      
+      <div style="background-color: #f4f5f7; padding: 20px; margin: 20px 0; border-radius: 5px; text-align: center;">
+        <a href="${acceptUrl}"
+           style="background-color: #0052CC; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+          Chấp nhận lời mời
+        </a>
+      </div>
+
+      <p style="color: #6b778c; font-size: 13px;">Link này sẽ hết hạn sau 7 ngày. Nếu bạn không mong muốn tham gia, vui lòng bỏ qua email này.</p>
+      <p>Trân trọng,<br>Đội ngũ hỗ trợ</p>
+    </div>
+  `;
+
+    return this.sendEmail({ to, subject, html });
+  }
 }

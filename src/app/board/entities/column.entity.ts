@@ -19,7 +19,7 @@ export class ColumnEntity extends BaseUuidEntity {
   boardId: string;
 
   @ManyToOne(() => Board, (board) => board.columns, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'boardId' })
+  @JoinColumn({ name: 'board_id' })
   board: Board;
 
   @Column({ type: 'text' })

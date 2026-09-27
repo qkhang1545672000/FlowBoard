@@ -18,7 +18,7 @@ export class Label {
   boardId: string;
 
   @ManyToOne(() => Board, (board) => board.labels, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'boardId' })
+  @JoinColumn({ name: 'board_id' })
   board: Board;
 
   @Column({ type: 'text', nullable: true })
