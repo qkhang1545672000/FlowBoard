@@ -11,6 +11,7 @@ import { BoardVisibility } from 'src/shared/types/board-visibility.enum';
 import { Workspace } from 'src/app/workspace/entities/workspace.entity';
 import { ColumnEntity } from './column.entity';
 import { Label } from './label.entity';
+import { BoardMember } from './board-member.entity';
 
 @Entity('boards')
 export class Board extends BaseUuidEntity {
@@ -45,4 +46,7 @@ export class Board extends BaseUuidEntity {
 
   @OneToMany(() => Label, (label) => label.board)
   labels: Label[];
+
+  @OneToMany(() => BoardMember, (member) => member.board)
+  members: BoardMember[];
 }

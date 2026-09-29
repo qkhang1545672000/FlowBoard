@@ -10,6 +10,7 @@ import { EmailModule } from '../email/email.module';
 import { WorkspaceInvitation } from './entities/workspace-invitation.entity';
 
 import { User } from '../user/entities/user.entity';
+import { Board } from '../board/entities/board.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { User } from '../user/entities/user.entity';
       WorkspaceMember,
       WorkspaceInvitation,
       User,
+      Board,
     ]),
     AuthModule,
     EmailModule,

@@ -7,10 +7,18 @@ import { Label } from './entities/label.entity';
 import { ActivityLog } from './entities/activity-log.entity';
 import { BoardController } from './board.controller';
 import { BoardService } from './board.service';
+import { BoardMember } from './entities/board-member.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Board, ColumnEntity, Task, Label, ActivityLog]),
+    TypeOrmModule.forFeature([
+      Board,
+      ColumnEntity,
+      Task,
+      Label,
+      ActivityLog,
+      BoardMember,
+    ]),
   ],
   controllers: [BoardController],
   providers: [BoardService],

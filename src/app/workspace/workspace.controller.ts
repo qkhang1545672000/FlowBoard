@@ -18,7 +18,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { plainToInstance } from 'class-transformer';
+
 import { WorkspaceService } from './workspace.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
@@ -29,6 +29,7 @@ import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
 import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { WorkspaceRole } from 'src/shared/types/workspace-role.enum';
+import { Workspace } from './entities/workspace.entity';
 @UseGuards(SessionAuthGuard)
 @ApiTags('Quản lý Workspace')
 @ApiBearerAuth()
@@ -36,10 +37,22 @@ import { WorkspaceRole } from 'src/shared/types/workspace-role.enum';
 export class WorkspaceController {
   constructor(private readonly workspaceService: WorkspaceService) {}
 
-  private mapWorkspaceResponse(workspace: any) {
-    return plainToInstance(WorkspaceResponseDto, workspace, {
-      excludeExtraneousValues: true,
-    });
+  private mapWorkspaceResponse(ws: Workspace) {
+    return {
+      id: ws.id,
+      name: ws.name,
+      slug: ws.slug,
+      updatedAt: ws.updatedAt,
+      boardsCount: ws.boards ? ws.boards.length : 0, // Đếm số lượng board trong workspace
+      members: ws.members
+        ? ws.members.map((m) => ({
+            _id: m.userId,
+            displayName: m.user?.name || 'Member',
+            avatarUrl: m.user?.image || m.user?.image || null,
+            joinedAt: m.createdAt,
+          }))
+        : [],
+    };
   }
 
   // ==========================================
@@ -74,13 +87,10 @@ export class WorkspaceController {
 
   @Get(':id')
   @ApiOperation({
-    summary: 'Lấy chi tiết Workspace theo ID',
-    operationId: 'workspace_get_by_id',
+    summary: 'Lấy chi tiết Workspace và danh sách Boards theo ID',
   })
-  @ApiOkResponse({ type: WorkspaceResponseDto })
-  async getWorkspace(@Param('id') id: string) {
-    const workspace = await this.workspaceService.getWorkspaceById(id);
-    return this.mapWorkspaceResponse(workspace);
+  async getWorkspaceDetail(@Param('id') id: string) {
+    return this.workspaceService.getWorkspaceWithBoards(id);
   }
 
   @Patch(':id')

@@ -23,7 +23,14 @@ import { AddMemberDto } from './dto/add-member.dto';
 import { InviteMemberDto } from './dto/InviteMember.dto';
 import { EmailService } from '../email/email.service'; // Điều chỉnh path nếu cần
 import { InvitationStatus } from 'src/shared/types/invitation-status.enum';
-
+import { Board } from '../board/entities/board.entity';
+interface BoardRaw {
+  id: string;
+  title: string;
+  tasksCount: string;
+  membersCount: string;
+  updatedAt: Date;
+}
 @Injectable()
 export class WorkspaceService {
   constructor(
@@ -35,6 +42,8 @@ export class WorkspaceService {
     private readonly invitationRepository: Repository<WorkspaceInvitation>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Board)
+    private readonly boardRepository: Repository<Board>,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
@@ -66,11 +75,19 @@ export class WorkspaceService {
       where: { userId },
       relations: {
         workspace: {
-          members: true, // Lấy toàn bộ danh sách members của workspace đó
+          boards: true, // Lấy quan hệ boards để đếm
+          members: {
+            user: true, // Lấy thông tin user của từng member (avatar, displayName)
+          },
+        },
+      },
+      order: {
+        workspace: {
+          updatedAt: 'DESC', // Sắp xếp theo lần cập nhật gần nhất
         },
       },
     });
-    console.log('membner:', members);
+
     return members.map((m) => m.workspace).filter(Boolean);
   }
 
@@ -123,6 +140,50 @@ export class WorkspaceService {
     }
   }
 
+  async getWorkspaceWithBoards(workspaceId: string) {
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+      },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Không tìm thấy Workspace');
+    }
+
+    const boards = await this.boardRepository
+      .createQueryBuilder('board')
+      .leftJoin('board.columns', 'column')
+      .leftJoin('column.tasks', 'task')
+      .leftJoin('board.members', 'member') // Đã hoạt động bình thường!
+      .where('board.workspaceId = :workspaceId', { workspaceId })
+      .select([
+        'board.id AS id',
+        'board.title AS title',
+        'board.updatedAt AS "updatedAt"',
+      ])
+      .addSelect('COUNT(DISTINCT task.id)', 'tasksCount')
+      .addSelect('COUNT(DISTINCT member.id)', 'membersCount')
+      .groupBy('board.id')
+      .orderBy('board.updatedAt', 'DESC')
+      .getRawMany<BoardRaw>();
+
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      description: workspace.description,
+      boards: boards.map((b) => ({
+        id: b.id,
+        title: b.title,
+        tasksCount: parseInt(b.tasksCount || '0', 10),
+        membersCount: parseInt(b.membersCount || '0', 10),
+        updatedAt: b.updatedAt,
+      })),
+    };
+  }
   // ==========================================
   // 3. CẬP NHẬT WORKSPACE (UPDATE)
   // ==========================================
