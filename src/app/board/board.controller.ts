@@ -33,6 +33,7 @@ export class BoardController {
   @Post()
   @ApiOperation({ summary: 'Tạo mới một Board' })
   create(@Body() createBoardDto: CreateBoardDto, @CurrentUser() user: User) {
+    console.log('cccccccccccccccccccc', createBoardDto.memberIds);
     return this.boardService.create(createBoardDto, user.id);
   }
 

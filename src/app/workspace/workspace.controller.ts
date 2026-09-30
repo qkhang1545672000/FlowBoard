@@ -30,7 +30,10 @@ import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { WorkspaceRole } from 'src/shared/types/workspace-role.enum';
 import { Workspace } from './entities/workspace.entity';
-import { PaginationQueryDto } from './dto/PaginationQuery.dto';
+import {
+  PaginationQueryDto,
+  WorkspaceFilterType,
+} from './dto/PaginationQuery.dto';
 @UseGuards(SessionAuthGuard)
 @ApiTags('Quản lý Workspace')
 @ApiBearerAuth()
@@ -80,11 +83,13 @@ export class WorkspaceController {
     @CurrentUser() user: User,
     @Query() query: PaginationQueryDto,
   ) {
-    const { page, limit } = query;
+    const { page = 1, limit = 10, type = WorkspaceFilterType.ALL } = query;
+
     const result = await this.workspaceService.getUserWorkspaces(
       user.id,
       page,
       limit,
+      type,
     );
 
     return {

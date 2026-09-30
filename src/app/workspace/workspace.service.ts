@@ -24,6 +24,7 @@ import { InviteMemberDto } from './dto/InviteMember.dto';
 import { EmailService } from '../email/email.service'; // Điều chỉnh path nếu cần
 import { InvitationStatus } from 'src/shared/types/invitation-status.enum';
 import { Board } from '../board/entities/board.entity';
+import { WorkspaceFilterType } from './dto/PaginationQuery.dto';
 interface BoardRaw {
   id: string;
   title: string;
@@ -74,11 +75,28 @@ export class WorkspaceService {
     userId: string,
     page: number = 1,
     limit: number = 10,
+    type: WorkspaceFilterType = WorkspaceFilterType.ALL,
   ): Promise<{ data: Workspace[]; total: number; hasMore: boolean }> {
     const skip = (page - 1) * limit;
 
+    // 1. Tạo điều kiện lọc cơ bản theo userId
+    const whereCondition: any = { userId };
+
+    // 2. Lọc theo type truyền vào
+    if (type === WorkspaceFilterType.OWNED) {
+      // Chỉ lấy Workspace do user này sở hữu / làm OWNER
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      whereCondition.role = WorkspaceRole.OWNER;
+    } else if (type === WorkspaceFilterType.JOINED) {
+      // Chỉ lấy Workspace do người khác tạo mà user này tham gia
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      whereCondition.role = WorkspaceRole.MEMBER;
+    }
+
+    // 3. Truy vấn bảng WorkspaceMember
     const [members, total] = await this.memberRepository.findAndCount({
-      where: { userId },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      where: whereCondition,
       relations: {
         workspace: {
           boards: true,
@@ -96,6 +114,7 @@ export class WorkspaceService {
       take: limit,
     });
 
+    // 4. Lấy đối tượng Workspace ra khỏi Member
     const workspaces = members.map((m) => m.workspace).filter(Boolean);
     const hasMore = page * limit < total;
 
@@ -185,18 +204,25 @@ export class WorkspaceService {
     // 2. Truy vấn danh sách Boards trong Workspace
     const boards = await this.boardRepository
       .createQueryBuilder('board')
-      .leftJoin('board.columns', 'column')
-      .leftJoin('column.tasks', 'task')
-      .leftJoin('board.members', 'member')
       .where('board.workspaceId = :workspaceId', { workspaceId })
       .select([
         'board.id AS id',
         'board.title AS title',
         'board.updatedAt AS "updatedAt"',
       ])
-      .addSelect('COUNT(DISTINCT task.id)', 'tasksCount')
-      .addSelect('COUNT(DISTINCT member.id)', 'membersCount')
-      .groupBy('board.id')
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('COUNT(task.id)', 'tasksCount')
+          .from('tasks', 'task')
+          .innerJoin('columns', 'column', 'column.id = task.column_id')
+          .where('column.board_id = board.id');
+      }, 'tasksCount')
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('COUNT(bm.id)', 'membersCount')
+          .from('board_members', 'bm')
+          .where('bm.board_id = board.id');
+      }, 'membersCount')
       .orderBy('board.updatedAt', 'DESC')
       .getRawMany<BoardRaw>();
 

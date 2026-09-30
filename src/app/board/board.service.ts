@@ -35,54 +35,49 @@ export class BoardService {
       });
       const savedBoard = await queryRunner.manager.save(board);
 
-      // 2. Lấy danh sách WorkspaceMember IDs từ DTO
+      // 2. Lấy danh sách WorkspaceMember IDs từ DTO và lọc trùng
       const memberIdsInput = createBoardDto.memberIds || [];
-      const uniqueMemberIds = Array.from(new Set(memberIdsInput));
+      const uniqueWsMemberIds = Array.from(new Set(memberIdsInput));
 
-      // 3. Tìm các bản ghi WorkspaceMember trong DB để lấy ra userId thực tế
-      const workspaceMembers = await queryRunner.manager.find(WorkspaceMember, {
-        where: { id: In(uniqueMemberIds) },
-      });
-
-      const boardMembersToSave: BoardMember[] = [];
-
-      // Map lưu thông tin để kiểm tra Leader dựa vào WorkspaceMember ID
-      for (const wsMember of workspaceMembers) {
-        let role = BoardMemberRole.MEMBER;
-
-        // Nếu workspaceMember này được chỉ định làm Leader
-        if (
-          createBoardDto.leaderId &&
-          wsMember.id === createBoardDto.leaderId
-        ) {
-          role = BoardMemberRole.LEADER;
-        }
-
-        const memberRecord = queryRunner.manager.create(BoardMember, {
-          boardId: savedBoard.id,
-          userId: wsMember.id, // ✅ Truyền đúng userId bắt buộc
-          role,
+      // 3. ĐÃ SỬA: Tìm WorkspaceMember theo ID của bảng WorkspaceMember (`id`)
+      let workspaceMembers: WorkspaceMember[] = [];
+      if (uniqueWsMemberIds.length > 0) {
+        workspaceMembers = await queryRunner.manager.find(WorkspaceMember, {
+          where: { id: In(uniqueWsMemberIds) },
         });
-
-        boardMembersToSave.push(memberRecord);
       }
 
-      // 4. Luôn đảm bảo Người tạo Board (currentUserId) được thêm làm ADMIN/OWNER nếu chưa có trong danh sách
-      const isOwnerAdded = boardMembersToSave.some(
-        (m) => m.userId === currentUserId,
-      );
+      // Map chứa danh sách các userId nguyên bản để tránh trùng lặp
+      // Key: userId, Value: role
+      const userRoleMap = new Map<string, BoardMemberRole>();
 
-      if (!isOwnerAdded) {
-        boardMembersToSave.push(
+      // Gán role cho các thành viên được chọn từ workspace
+      for (const wsMember of workspaceMembers) {
+        // Nếu member này là Leader (kiểm tra theo wsMember.id hoặc wsMember.userId)
+        const isLeader =
+          createBoardDto.leaderId &&
+          (wsMember.id === createBoardDto.leaderId ||
+            wsMember.userId === createBoardDto.leaderId);
+
+        const role = isLeader ? BoardMemberRole.LEADER : BoardMemberRole.MEMBER;
+        userRoleMap.set(wsMember.userId, role);
+      }
+
+      // 4. BẮT BUỘC: Đảm bảo Người tạo (currentUserId) luôn có mặt với quyền ADMIN
+      // (Nếu đã có sẵn từ trước thì override thành ADMIN)
+      userRoleMap.set(currentUserId, BoardMemberRole.ADMIN);
+
+      // 5. Chuyển Map thành mảng Entity để lưu vào DB (Đảm bảo mỗi userId chỉ xuất hiện đúng 1 lần)
+      const boardMembersToSave = Array.from(userRoleMap.entries()).map(
+        ([userId, role]) =>
           queryRunner.manager.create(BoardMember, {
             boardId: savedBoard.id,
-            userId: currentUserId, // ✅ Gán userId của người tạo
-            role: BoardMemberRole.ADMIN,
+            userId,
+            role,
           }),
-        );
-      }
+      );
 
-      // 5. Lưu toàn bộ danh sách thành viên Board
+      // 6. Lưu toàn bộ danh sách thành viên Board
       if (boardMembersToSave.length > 0) {
         await queryRunner.manager.save(BoardMember, boardMembersToSave);
       }
