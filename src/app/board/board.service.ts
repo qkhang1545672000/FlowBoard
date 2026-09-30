@@ -35,25 +35,27 @@ export class BoardService {
       });
       const savedBoard = await queryRunner.manager.save(board);
 
-      // 2. Lấy danh sách WorkspaceMember IDs từ DTO và lọc trùng
+      // 2. Lấy danh sách ID từ DTO và lọc trùng lặp
       const memberIdsInput = createBoardDto.memberIds || [];
-      const uniqueWsMemberIds = Array.from(new Set(memberIdsInput));
+      const uniqueMemberIds = Array.from(new Set(memberIdsInput));
 
-      // 3. ĐÃ SỬA: Tìm WorkspaceMember theo ID của bảng WorkspaceMember (`id`)
+      // 3. Tìm WorkspaceMember khớp với WorkspaceMember.id HOẶC WorkspaceMember.userId
       let workspaceMembers: WorkspaceMember[] = [];
-      if (uniqueWsMemberIds.length > 0) {
+
+      if (uniqueMemberIds.length > 0) {
         workspaceMembers = await queryRunner.manager.find(WorkspaceMember, {
-          where: { id: In(uniqueWsMemberIds) },
+          where: [
+            { id: In(uniqueMemberIds) }, // Khớp với id của bảng workspace_members
+            { userId: In(uniqueMemberIds) }, // Khớp với user_id của bảng workspace_members
+          ],
         });
       }
 
-      // Map chứa danh sách các userId nguyên bản để tránh trùng lặp
-      // Key: userId, Value: role
+      // 4. Dùng Map<userId, role> để loại bỏ hoàn toàn trùng lặp userId
       const userRoleMap = new Map<string, BoardMemberRole>();
 
-      // Gán role cho các thành viên được chọn từ workspace
+      // Ánh xạ các thành viên tìm được trong Workspace
       for (const wsMember of workspaceMembers) {
-        // Nếu member này là Leader (kiểm tra theo wsMember.id hoặc wsMember.userId)
         const isLeader =
           createBoardDto.leaderId &&
           (wsMember.id === createBoardDto.leaderId ||
@@ -63,11 +65,10 @@ export class BoardService {
         userRoleMap.set(wsMember.userId, role);
       }
 
-      // 4. BẮT BUỘC: Đảm bảo Người tạo (currentUserId) luôn có mặt với quyền ADMIN
-      // (Nếu đã có sẵn từ trước thì override thành ADMIN)
+      // Luôn đảm bảo Người tạo (currentUserId) có mặt và mang quyền ADMIN
       userRoleMap.set(currentUserId, BoardMemberRole.ADMIN);
 
-      // 5. Chuyển Map thành mảng Entity để lưu vào DB (Đảm bảo mỗi userId chỉ xuất hiện đúng 1 lần)
+      // 5. Chuyển Map thành danh sách Entity BoardMember
       const boardMembersToSave = Array.from(userRoleMap.entries()).map(
         ([userId, role]) =>
           queryRunner.manager.create(BoardMember, {
@@ -77,7 +78,7 @@ export class BoardService {
           }),
       );
 
-      // 6. Lưu toàn bộ danh sách thành viên Board
+      // 6. Lưu tất cả thành viên vào DB
       if (boardMembersToSave.length > 0) {
         await queryRunner.manager.save(BoardMember, boardMembersToSave);
       }
