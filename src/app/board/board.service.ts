@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Board } from './entities/board.entity';
 import { BoardMember } from './entities/board-member.entity';
 import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
 import { BoardMemberRole } from 'src/shared/types/BoardMemberRole.enum';
+import { WorkspaceMember } from '../workspace/entities/workspace-member.entity';
 
 @Injectable()
 export class BoardService {
@@ -14,28 +15,86 @@ export class BoardService {
     private readonly boardRepository: Repository<Board>,
     @InjectRepository(BoardMember)
     private readonly boardMemberRepository: Repository<BoardMember>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
    * Tạo mới 1 Board và tự động thêm User tạo vào làm ADMIN của Board đó
    */
-  async create(createBoardDto: CreateBoardDto, userId: string) {
-    // 1. Khởi tạo và lưu Board
-    const board = this.boardRepository.create({
-      title: createBoardDto.title,
-      workspaceId: createBoardDto.workspaceId,
-    });
-    const savedBoard = await this.boardRepository.save(board);
+  async create(createBoardDto: CreateBoardDto, currentUserId: string) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // 2. Thêm người tạo vào làm ADMIN trong bảng board_members
-    const boardMember = this.boardMemberRepository.create({
-      boardId: savedBoard.id,
-      userId,
-      role: BoardMemberRole.ADMIN,
-    });
-    await this.boardMemberRepository.save(boardMember);
+    try {
+      // 1. Tạo và lưu Board
+      const board = queryRunner.manager.create(Board, {
+        title: createBoardDto.title,
+        description: createBoardDto.description,
+        workspaceId: createBoardDto.workspaceId,
+      });
+      const savedBoard = await queryRunner.manager.save(board);
 
-    return savedBoard;
+      // 2. Lấy danh sách WorkspaceMember IDs từ DTO
+      const memberIdsInput = createBoardDto.memberIds || [];
+      const uniqueMemberIds = Array.from(new Set(memberIdsInput));
+
+      // 3. Tìm các bản ghi WorkspaceMember trong DB để lấy ra userId thực tế
+      const workspaceMembers = await queryRunner.manager.find(WorkspaceMember, {
+        where: { id: In(uniqueMemberIds) },
+      });
+
+      const boardMembersToSave: BoardMember[] = [];
+
+      // Map lưu thông tin để kiểm tra Leader dựa vào WorkspaceMember ID
+      for (const wsMember of workspaceMembers) {
+        let role = BoardMemberRole.MEMBER;
+
+        // Nếu workspaceMember này được chỉ định làm Leader
+        if (
+          createBoardDto.leaderId &&
+          wsMember.id === createBoardDto.leaderId
+        ) {
+          role = BoardMemberRole.LEADER;
+        }
+
+        const memberRecord = queryRunner.manager.create(BoardMember, {
+          boardId: savedBoard.id,
+          userId: wsMember.id, // ✅ Truyền đúng userId bắt buộc
+          role,
+        });
+
+        boardMembersToSave.push(memberRecord);
+      }
+
+      // 4. Luôn đảm bảo Người tạo Board (currentUserId) được thêm làm ADMIN/OWNER nếu chưa có trong danh sách
+      const isOwnerAdded = boardMembersToSave.some(
+        (m) => m.userId === currentUserId,
+      );
+
+      if (!isOwnerAdded) {
+        boardMembersToSave.push(
+          queryRunner.manager.create(BoardMember, {
+            boardId: savedBoard.id,
+            userId: currentUserId, // ✅ Gán userId của người tạo
+            role: BoardMemberRole.ADMIN,
+          }),
+        );
+      }
+
+      // 5. Lưu toàn bộ danh sách thành viên Board
+      if (boardMembersToSave.length > 0) {
+        await queryRunner.manager.save(BoardMember, boardMembersToSave);
+      }
+
+      await queryRunner.commitTransaction();
+      return savedBoard;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   /**

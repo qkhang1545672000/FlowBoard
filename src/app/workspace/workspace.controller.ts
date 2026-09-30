@@ -30,6 +30,7 @@ import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { WorkspaceRole } from 'src/shared/types/workspace-role.enum';
 import { Workspace } from './entities/workspace.entity';
+import { PaginationQueryDto } from './dto/PaginationQuery.dto';
 @UseGuards(SessionAuthGuard)
 @ApiTags('Quản lý Workspace')
 @ApiBearerAuth()
@@ -74,17 +75,26 @@ export class WorkspaceController {
   }
 
   @Get()
-  @ApiOperation({
-    summary: 'Lấy danh sách Workspace của người dùng hiện tại',
-    operationId: 'workspace_get_my_workspaces',
-  })
   @ApiOkResponse({ type: [WorkspaceResponseDto] })
-  async getMyWorkspaces(@CurrentUser() user: User) {
-    const workspaces = await this.workspaceService.getUserWorkspaces(user.id);
+  async getMyWorkspaces(
+    @CurrentUser() user: User,
+    @Query() query: PaginationQueryDto,
+  ) {
+    const { page, limit } = query;
+    const result = await this.workspaceService.getUserWorkspaces(
+      user.id,
+      page,
+      limit,
+    );
 
-    return workspaces.map((ws) => this.mapWorkspaceResponse(ws));
+    return {
+      data: result.data.map((ws) => this.mapWorkspaceResponse(ws)),
+      total: result.total,
+      hasMore: result.hasMore,
+      page,
+      limit,
+    };
   }
-
   @Get(':id')
   @ApiOperation({
     summary: 'Lấy chi tiết Workspace và danh sách Boards theo ID',

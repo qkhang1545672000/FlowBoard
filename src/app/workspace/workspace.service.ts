@@ -70,25 +70,36 @@ export class WorkspaceService {
     return workspace;
   }
 
-  async getUserWorkspaces(userId: string): Promise<Workspace[]> {
-    const members = await this.memberRepository.find({
+  async getUserWorkspaces(
+    userId: string,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<{ data: Workspace[]; total: number; hasMore: boolean }> {
+    const skip = (page - 1) * limit;
+
+    const [members, total] = await this.memberRepository.findAndCount({
       where: { userId },
       relations: {
         workspace: {
-          boards: true, // Lấy quan hệ boards để đếm
+          boards: true,
           members: {
-            user: true, // Lấy thông tin user của từng member (avatar, displayName)
+            user: true,
           },
         },
       },
       order: {
         workspace: {
-          updatedAt: 'DESC', // Sắp xếp theo lần cập nhật gần nhất
+          updatedAt: 'DESC',
         },
       },
+      skip,
+      take: limit,
     });
 
-    return members.map((m) => m.workspace).filter(Boolean);
+    const workspaces = members.map((m) => m.workspace).filter(Boolean);
+    const hasMore = page * limit < total;
+
+    return { data: workspaces, total, hasMore };
   }
 
   // ==========================================
@@ -141,12 +152,29 @@ export class WorkspaceService {
   }
 
   async getWorkspaceWithBoards(workspaceId: string) {
+    // 1. Lấy thông tin Workspace kèm theo danh sách thành viên (members -> user)
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
+      relations: {
+        members: {
+          user: true, // Join relation members -> user
+        },
+      }, // Join bảng members và user
       select: {
         id: true,
         name: true,
         description: true,
+        members: {
+          id: true,
+          role: true,
+          createdAt: true,
+          user: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+          },
+        },
       },
     });
 
@@ -154,11 +182,12 @@ export class WorkspaceService {
       throw new NotFoundException('Không tìm thấy Workspace');
     }
 
+    // 2. Truy vấn danh sách Boards trong Workspace
     const boards = await this.boardRepository
       .createQueryBuilder('board')
       .leftJoin('board.columns', 'column')
       .leftJoin('column.tasks', 'task')
-      .leftJoin('board.members', 'member') // Đã hoạt động bình thường!
+      .leftJoin('board.members', 'member')
       .where('board.workspaceId = :workspaceId', { workspaceId })
       .select([
         'board.id AS id',
@@ -171,10 +200,22 @@ export class WorkspaceService {
       .orderBy('board.updatedAt', 'DESC')
       .getRawMany<BoardRaw>();
 
+    // 3. Trả về Response đầy đủ gồm thông tin Workspace, danh sách Members và Boards
     return {
       id: workspace.id,
       name: workspace.name,
       description: workspace.description,
+      members: workspace.members.map((m) => ({
+        id: m.id,
+        role: m.role,
+        joinedAt: m.createdAt,
+        user: {
+          id: m.user.id,
+          email: m.user.email,
+          name: m.user.name,
+          image: m.user.image,
+        },
+      })),
       boards: boards.map((b) => ({
         id: b.id,
         title: b.title,
