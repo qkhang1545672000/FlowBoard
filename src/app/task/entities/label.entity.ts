@@ -6,8 +6,8 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { Board } from './board.entity';
-import { Task } from './task.entity';
+import { Board } from '../../board/entities/board.entity';
+import { Task } from 'src/app/task/entities/task.entity';
 
 @Entity('labels')
 export class Label {

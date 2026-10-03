@@ -17,6 +17,8 @@ import { EmailModule } from './app/email/email.module';
 import { WorkspaceModule } from './app/workspace/workspace.module';
 import { BoardModule } from './app/board/board.module';
 import { ChatModule } from './app/chat/chat.module';
+import { ColumnModule } from './app/column/column.module';
+import { TaskModule } from './app/task/task.module';
 
 const envFile =
   process.env.NODE_ENV === 'production'
@@ -44,6 +46,8 @@ const envFile =
     WorkspaceModule,
     BoardModule,
     ChatModule,
+    ColumnModule,
+    TaskModule,
   ],
   providers: [
     {

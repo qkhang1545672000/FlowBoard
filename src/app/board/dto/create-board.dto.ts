@@ -13,6 +13,11 @@ export class CreateBoardDto {
   @IsNotEmpty()
   title: string;
 
+  @ApiProperty({ example: 'my-board', description: 'Slug của Board' })
+  @IsString()
+  @IsNotEmpty()
+  slug: string;
+
   @ApiPropertyOptional({
     example: 'Mô tả ngắn gọn về quy trình làm việc...',
     description: 'Mô tả chi tiết về Board',

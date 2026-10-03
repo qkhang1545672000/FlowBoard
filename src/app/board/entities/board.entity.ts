@@ -9,14 +9,17 @@ import {
 } from 'typeorm';
 import { BoardVisibility } from 'src/shared/types/board-visibility.enum';
 import { Workspace } from 'src/app/workspace/entities/workspace.entity';
-import { ColumnEntity } from './column.entity';
-import { Label } from './label.entity';
+import { ColumnEntity } from '../../column/entities/column.entity';
+import { Label } from '../../task/entities/label.entity';
 import { BoardMember } from './board-member.entity';
 
 @Entity('boards')
 export class Board extends BaseUuidEntity {
   @Column({ type: 'uuid' })
   workspaceId: string;
+
+  @Column({ type: 'text', unique: true })
+  slug: string;
 
   @ManyToOne(() => Workspace, (ws) => ws.boards, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'workspace_id' })

@@ -4,7 +4,7 @@ import { ChatScope } from 'src/shared/types/chat-scope.enum';
 import { User } from 'src/app/user/entities/user.entity';
 import { Workspace } from 'src/app/workspace/entities/workspace.entity';
 import { Board } from 'src/app/board/entities/board.entity';
-import { Task } from 'src/app/board/entities/task.entity';
+import { Task } from 'src/app/task/entities/task.entity';
 
 @Entity('messages')
 @Index(['scope', 'workspaceId'])

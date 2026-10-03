@@ -9,8 +9,8 @@ import {
   OneToMany,
 } from 'typeorm';
 import { ColumnLockType } from 'src/shared/types/column-lock-type.enum';
-import { Board } from './board.entity';
-import { Task } from './task.entity';
+import { Board } from '../../board/entities/board.entity';
+import { Task } from 'src/app/task/entities/task.entity';
 
 @Entity('columns')
 @Index(['boardId', 'position'])

@@ -6,19 +6,13 @@ import {
   Patch,
   Param,
   Delete,
-  Query,
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BoardService } from './board.service';
 import { CreateBoardDto } from './dto/create-board.dto';
-import { UpdateBoardDto } from './dto/update-board.dto';
+import { UpdateBoardDto } from '../column/dto/update-board.dto';
 
 import { CurrentUser } from 'src/shared/decorators/current-user.decorator'; // Decorator lấy User từ request
 import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
@@ -33,21 +27,22 @@ export class BoardController {
   @Post()
   @ApiOperation({ summary: 'Tạo mới một Board' })
   create(@Body() createBoardDto: CreateBoardDto, @CurrentUser() user: User) {
-    console.log('cccccccccccccccccccc', createBoardDto.memberIds);
     return this.boardService.create(createBoardDto, user.id);
   }
 
-  @Get()
-  @ApiOperation({ summary: 'Lấy danh sách Board theo Workspace ID' })
-  @ApiQuery({ name: 'workspaceId', required: true, type: String })
-  findAllByWorkspace(@Query('workspaceId', ParseUUIDPipe) workspaceId: string) {
-    return this.boardService.findAllByWorkspace(workspaceId);
-  }
+  // @Get(':workspaceId')
+  // @ApiOperation({ summary: 'Lấy danh sách Board theo Workspace ID' })
+  // findAllByWorkspace(@Param('workspaceId', ParseUUIDPipe) workspaceId: string) {
+  //   return this.boardService.findAllByWorkspace(workspaceId);
+  // }
 
-  @Get(':id')
+  @Get(':boardId')
   @ApiOperation({ summary: 'Lấy chi tiết Board theo ID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.boardService.findOne(id);
+  findBoardByID(
+    @Param('boardId', ParseUUIDPipe) boardId: string,
+    @CurrentUser() user: User, // Lấy userId từ Session/JWT
+  ) {
+    return this.boardService.findBoardByID(boardId, user.id);
   }
 
   @Patch(':id')
@@ -61,7 +56,7 @@ export class BoardController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa một Board' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.boardService.remove(id);
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.boardService.remove(id, user.id);
   }
 }

@@ -28,6 +28,7 @@ import { WorkspaceFilterType } from './dto/PaginationQuery.dto';
 interface BoardRaw {
   id: string;
   title: string;
+  slug: string;
   tasksCount: string;
   membersCount: string;
   updatedAt: Date;
@@ -208,6 +209,7 @@ export class WorkspaceService {
       .select([
         'board.id AS id',
         'board.title AS title',
+        'board.slug AS slug',
         'board.updatedAt AS "updatedAt"',
       ])
       .addSelect((subQuery) => {
@@ -245,6 +247,7 @@ export class WorkspaceService {
       boards: boards.map((b) => ({
         id: b.id,
         title: b.title,
+        slug: b.slug,
         tasksCount: parseInt(b.tasksCount || '0', 10),
         membersCount: parseInt(b.membersCount || '0', 10),
         updatedAt: b.updatedAt,

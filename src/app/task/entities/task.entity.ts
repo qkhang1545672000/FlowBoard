@@ -10,9 +10,9 @@ import {
   DeleteDateColumn,
 } from 'typeorm';
 import { TaskPriority } from 'src/shared/types/task-priority.enum';
-import { ColumnEntity } from './column.entity';
+import { ColumnEntity } from '../../column/entities/column.entity';
 import { User } from 'src/app/user/entities/user.entity';
-import { Label } from './label.entity';
+import { Label } from 'src/app/task/entities/label.entity';
 
 @Entity('tasks')
 @Index(['columnId', 'position'])
@@ -21,7 +21,7 @@ export class Task extends BaseUuidEntity {
   columnId: string;
 
   @ManyToOne(() => ColumnEntity, (col) => col.tasks, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'columnId' })
+  @JoinColumn({ name: 'column_id' })
   column: ColumnEntity;
 
   @Index()

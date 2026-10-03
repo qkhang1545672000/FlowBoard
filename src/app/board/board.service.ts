@@ -4,7 +4,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import { Board } from './entities/board.entity';
 import { BoardMember } from './entities/board-member.entity';
 import { CreateBoardDto } from './dto/create-board.dto';
-import { UpdateBoardDto } from './dto/update-board.dto';
+import { UpdateBoardDto } from '../column/dto/update-board.dto';
 import { BoardMemberRole } from 'src/shared/types/BoardMemberRole.enum';
 import { WorkspaceMember } from '../workspace/entities/workspace-member.entity';
 
@@ -32,6 +32,7 @@ export class BoardService {
         title: createBoardDto.title,
         description: createBoardDto.description,
         workspaceId: createBoardDto.workspaceId,
+        slug: createBoardDto.slug, // Lưu slug từ DTO
       });
       const savedBoard = await queryRunner.manager.save(board);
 
@@ -99,28 +100,83 @@ export class BoardService {
   async findAllByWorkspace(workspaceId: string) {
     return this.boardRepository.find({
       where: { workspaceId },
-      order: { createdAt: 'DESC' },
+      order: {
+        createdAt: 'DESC',
+        columns: {
+          position: 'ASC',
+          tasks: {
+            position: 'ASC', // Sửa ở đây: lồng object thay vì dùng chuỗi 'columns.tasks'
+          },
+        },
+      },
+      relations: {
+        columns: {
+          tasks: {
+            assignee: true,
+            labels: true,
+          },
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+        background: true,
+        columns: {
+          id: true,
+          title: true,
+          lock_type: true,
+          position: true,
+          tasks: {
+            id: true,
+            title: true,
+            dueDate: true,
+            // Hoặc đếm qua relation _count nếu dùng Prisma/TypeORM
+
+            assignee: {
+              id: true,
+              name: true,
+              image: true, // Dùng làm Avatar
+            },
+            labels: {
+              id: true,
+              title: true,
+              color: true, // Dùng làm vạch màu nhãn
+            },
+          },
+        },
+      },
     });
   }
 
   /**
    * Lấy chi tiết 1 Board cùng danh sách Columns và Members
    */
-  async findOne(id: string) {
+  async findBoardByID(boardId: string, userId: string) {
+    // Tìm board kèm theo điều kiện user phải là thành viên của Workspace (hoặc thành viên của Board)
     const board = await this.boardRepository.findOne({
-      where: { id },
+      where: {
+        id: boardId,
+        workspace: {
+          members: {
+            userId: userId, // Kiểm tra User hiện tại có nằm trong Workspace chứa Board này không
+          },
+        },
+      },
       relations: {
         columns: {
-          tasks: true, // Lấy quan hệ nested: Board -> Columns -> Tasks
-        },
-        members: {
-          user: true, // Lấy quan hệ nested: Board -> Members -> User
+          tasks: {
+            assignee: true,
+            labels: true,
+          },
         },
       },
     });
 
     if (!board) {
-      throw new NotFoundException('Không tìm thấy Board');
+      // Trả về 404 hoặc 403 Forbidden để bảo mật thông tin
+      throw new NotFoundException(
+        'Board không tồn tại hoặc bạn không có quyền truy cập',
+      );
     }
 
     return board;
@@ -145,8 +201,8 @@ export class BoardService {
   /**
    * Xóa Board theo ID
    */
-  async remove(id: string) {
-    const board = await this.findOne(id);
+  async remove(id: string, userId: string) {
+    const board = await this.findBoardByID(id, userId);
     await this.boardRepository.remove(board);
     return { success: true, message: 'Đã xóa Board thành công' };
   }
