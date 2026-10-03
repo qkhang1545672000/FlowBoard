@@ -12,7 +12,7 @@ export class BoardMember extends BaseUuidEntity {
   boardId: string;
 
   @ManyToOne(() => Board, (board) => board.members, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'boardId' })
+  @JoinColumn({ name: 'board_id' })
   board: Board;
 
   @Index()
@@ -20,7 +20,7 @@ export class BoardMember extends BaseUuidEntity {
   userId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
   @Column({

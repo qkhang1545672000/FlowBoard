@@ -163,6 +163,9 @@ export class BoardService {
         },
       },
       relations: {
+        members: {
+          user: true,
+        },
         columns: {
           tasks: {
             assignee: true,
