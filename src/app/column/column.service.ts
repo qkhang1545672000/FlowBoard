@@ -1,15 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ColumnEntity } from './entities/column.entity';
 import { CreateColumnDto } from './dto/create-column.dto';
 import { UpdateColumnDto } from '../board/dto/update-column.dto';
 
+import { BoardService } from '../board/board.service';
+
 @Injectable()
 export class ColumnService {
   constructor(
     @InjectRepository(ColumnEntity)
     private readonly columnRepository: Repository<ColumnEntity>,
+
+    private readonly boardService: BoardService,
   ) {}
 
   /**
@@ -60,7 +68,20 @@ export class ColumnService {
   /**
    * 3. SỬA CỘT (Tên, Lock status, Position...)
    */
-  async update(id: string, dto: UpdateColumnDto): Promise<ColumnEntity> {
+  async update(
+    id: string,
+    dto: UpdateColumnDto,
+    userId: string,
+  ): Promise<ColumnEntity> {
+    const isOwn = await this.boardService.checkIsOwnOrLeader(
+      dto.boardId,
+      userId,
+    );
+    if (!isOwn) {
+      throw new ForbiddenException(
+        'Bạn không có quyền thực hiện thao tác này!',
+      );
+    }
     const column = await this.findOne(id);
 
     Object.assign(column, dto);

@@ -20,6 +20,8 @@ import { ColumnService } from './column.service';
 import { CreateColumnDto } from './dto/create-column.dto';
 import { UpdateColumnDto } from '../board/dto/update-column.dto';
 import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
+import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
+import { User } from '../user/entities/user.entity';
 
 @UseGuards(SessionAuthGuard)
 @ApiTags('Columns')
@@ -50,10 +52,11 @@ export class ColumnController {
   @Patch(':id')
   @ApiOperation({ summary: 'Cập nhật thông tin Column' })
   update(
+    @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateColumnDto: UpdateColumnDto,
   ) {
-    return this.columnService.update(id, updateColumnDto);
+    return this.columnService.update(id, updateColumnDto, user.id);
   }
 
   @Delete(':id')

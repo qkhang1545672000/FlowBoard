@@ -209,4 +209,16 @@ export class BoardService {
     await this.boardRepository.remove(board);
     return { success: true, message: 'Đã xóa Board thành công' };
   }
+
+  async checkIsOwnOrLeader(boardId: string, userId: string): Promise<boolean> {
+    const member = await this.boardMemberRepository.findOne({
+      where: {
+        boardId,
+        userId,
+        role: In([BoardMemberRole.ADMIN, BoardMemberRole.LEADER]), // Kiểm tra role thuộc ADMIN hoặc LEADER
+      },
+    });
+
+    return !!member; // Trả về true nếu tìm thấy, false nếu không tìm thấy
+  }
 }
