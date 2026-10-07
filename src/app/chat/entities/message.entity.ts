@@ -15,7 +15,7 @@ export class Message extends BaseUuidEntity {
   senderId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'senderId' })
+  @JoinColumn({ name: 'sender_id' })
   sender: User;
 
   @Column({ type: 'enum', enum: ChatScope })
@@ -25,21 +25,21 @@ export class Message extends BaseUuidEntity {
   workspaceId: string | null;
 
   @ManyToOne(() => Workspace, { onDelete: 'CASCADE', nullable: true })
-  @JoinColumn({ name: 'workspaceId' })
+  @JoinColumn({ name: 'workspace_id' })
   workspace: Workspace | null;
 
   @Column({ type: 'uuid', nullable: true })
   boardId: string | null;
 
   @ManyToOne(() => Board, { onDelete: 'CASCADE', nullable: true })
-  @JoinColumn({ name: 'boardId' })
+  @JoinColumn({ name: 'board_id' })
   board: Board | null;
 
   @Column({ type: 'uuid', nullable: true })
   taskId: string | null;
 
   @ManyToOne(() => Task, { onDelete: 'CASCADE', nullable: true })
-  @JoinColumn({ name: 'taskId' })
+  @JoinColumn({ name: 'task_id' })
   task: Task | null;
 
   @Column({ type: 'text' })
