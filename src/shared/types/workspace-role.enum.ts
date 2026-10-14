@@ -1,5 +1,4 @@
 export enum WorkspaceRole {
   OWNER = 'OWNER',
-  ADMIN = 'ADMIN',
-  MEMBER = 'MEMBER',
+  MEMBER_WORKSPACE = 'MEMBER_WORKSPACE',
 }

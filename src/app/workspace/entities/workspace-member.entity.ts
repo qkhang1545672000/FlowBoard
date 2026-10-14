@@ -28,7 +28,11 @@ export class WorkspaceMember extends BaseUuidEntity {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column({ type: 'enum', enum: WorkspaceRole, default: WorkspaceRole.MEMBER })
+  @Column({
+    type: 'enum',
+    enum: WorkspaceRole,
+    default: WorkspaceRole.MEMBER_WORKSPACE,
+  })
   role: WorkspaceRole;
 
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })

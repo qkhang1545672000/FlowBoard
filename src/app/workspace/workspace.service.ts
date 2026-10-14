@@ -91,7 +91,7 @@ export class WorkspaceService {
     } else if (type === WorkspaceFilterType.JOINED) {
       // Chỉ lấy Workspace do người khác tạo mà user này tham gia
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      whereCondition.role = WorkspaceRole.MEMBER;
+      whereCondition.role = WorkspaceRole.MEMBER_WORKSPACE;
     }
 
     // 3. Truy vấn bảng WorkspaceMember
@@ -316,7 +316,7 @@ export class WorkspaceService {
     const member = this.memberRepository.create({
       workspaceId,
       userId: dto.userId,
-      role: dto.role ?? WorkspaceRole.MEMBER,
+      role: dto.role ?? WorkspaceRole.MEMBER_WORKSPACE,
     });
 
     return this.memberRepository.save(member);
@@ -404,7 +404,7 @@ export class WorkspaceService {
       workspaceId,
       email: dto.email,
       inviterId: inviter.id,
-      role: dto.role ?? WorkspaceRole.MEMBER,
+      role: dto.role ?? WorkspaceRole.MEMBER_WORKSPACE,
       token,
       expiresAt,
       status: InvitationStatus.PENDING,
@@ -438,6 +438,9 @@ export class WorkspaceService {
     const invitation = await this.invitationRepository.findOne({
       where: { token },
     });
+    const workspaceDetail = await this.workspaceRepository.findOne({
+      where: { id: invitation.workspaceId },
+    });
 
     if (!invitation) {
       throw new NotFoundException('Lời mời không tồn tại hoặc đã bị xóa');
@@ -450,6 +453,7 @@ export class WorkspaceService {
         success: true,
         message: 'Bạn đã gia nhập Workspace này trước đó rồi',
         workspaceId: invitation.workspaceId,
+        slug: workspaceDetail.slug,
       };
     }
 
@@ -479,6 +483,7 @@ export class WorkspaceService {
         success: true,
         message: 'Bạn đã là thành viên của Workspace này',
         workspaceId: invitation.workspaceId,
+        slug: workspaceDetail.slug,
       };
     }
 
@@ -498,6 +503,7 @@ export class WorkspaceService {
       success: true,
       message: 'Gia nhập Workspace thành công',
       workspaceId: invitation.workspaceId,
+      slug: workspaceDetail.slug,
     };
   }
 }

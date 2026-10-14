@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Board } from './entities/board.entity';
@@ -27,6 +31,18 @@ export class BoardService {
     await queryRunner.startTransaction();
 
     try {
+      // 0. Kiểm tra xem slug đã tồn tại trong workspace này chưa (hoặc toàn hệ thống tùy cấu trúc của bạn)
+      const existingBoard = await queryRunner.manager.findOne(Board, {
+        where: {
+          slug: createBoardDto.slug,
+          workspaceId: createBoardDto.workspaceId, // Thêm điều kiện này nếu slug chỉ cần unique trong cùng workspace
+        },
+      });
+
+      if (existingBoard) {
+        throw new ConflictException('tên đặt đã tồn tại hãy đặt tên khác');
+      }
+
       // 1. Tạo và lưu Board
       const board = queryRunner.manager.create(Board, {
         title: createBoardDto.title,
@@ -62,12 +78,14 @@ export class BoardService {
           (wsMember.id === createBoardDto.leaderId ||
             wsMember.userId === createBoardDto.leaderId);
 
-        const role = isLeader ? BoardMemberRole.LEADER : BoardMemberRole.MEMBER;
+        const role = isLeader
+          ? BoardMemberRole.BOARD_LEADER
+          : BoardMemberRole.BOARD_MEMBER;
         userRoleMap.set(wsMember.userId, role);
       }
 
-      // Luôn đảm bảo Người tạo (currentUserId) có mặt và mang quyền ADMIN
-      userRoleMap.set(currentUserId, BoardMemberRole.ADMIN);
+      // Luôn đảm bảo Người tạo (currentUserId) có mặt và mang quyền OWNER
+      userRoleMap.set(currentUserId, BoardMemberRole.OWNER);
 
       // 5. Chuyển Map thành danh sách Entity BoardMember
       const boardMembersToSave = Array.from(userRoleMap.entries()).map(
@@ -201,6 +219,52 @@ export class BoardService {
     return this.boardRepository.save(board);
   }
 
+  async getListMemberProject(boardId: string) {
+    // 1. Kiểm tra board có tồn tại hay không và lấy luôn danh sách thành viên cùng thông tin user
+    const board = await this.boardRepository.findOne({
+      where: { id: boardId },
+      relations: {
+        members: {
+          user: true, // Lấy quan hệ user thông qua bảng trung gian board_members
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+        members: {
+          id: true,
+          role: true,
+          user: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
+      },
+    });
+
+    // Nếu board không tồn tại, ném lỗi ngay từ đầu
+    if (!board) {
+      throw new NotFoundException(`Không tìm thấy Board với ID: ${boardId}`);
+    }
+
+    // 2. Chuẩn hóa danh sách thành viên trả về
+    const members = (board.members || []).map((bm) => ({
+      memberId: bm.id,
+      role: bm.role,
+      ...bm.user,
+    }));
+
+    // 3. Trả về thông tin kết quả kèm tổng số lượng
+    return {
+      boardId: board.id,
+      boardTitle: board.title,
+      total: members.length, // Tổng số lượng thành viên trong board
+      members, // Danh sách chi tiết thông tin user và role
+    };
+  }
+
   /**
    * Xóa Board theo ID
    */
@@ -215,10 +279,23 @@ export class BoardService {
       where: {
         boardId,
         userId,
-        role: In([BoardMemberRole.ADMIN, BoardMemberRole.LEADER]), // Kiểm tra role thuộc ADMIN hoặc LEADER
+        role: In([BoardMemberRole.OWNER, BoardMemberRole.BOARD_LEADER]), // Kiểm tra role thuộc ADMIN hoặc LEADER
       },
     });
 
     return !!member; // Trả về true nếu tìm thấy, false nếu không tìm thấy
+  }
+
+  async getUserInBoardMember(id: string) {
+    try {
+      const member = await this.boardMemberRepository.findOne({
+        where: {
+          id,
+        },
+      });
+      return member;
+    } catch (error) {
+      console.log('lỗi của getUserInBoardMember ', error);
+    }
   }
 }

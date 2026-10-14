@@ -16,7 +16,11 @@ export class WorkspaceInvitation extends BaseUuidEntity {
   @Column({ name: 'inviter_id' })
   inviterId: string;
 
-  @Column({ type: 'enum', enum: WorkspaceRole, default: WorkspaceRole.MEMBER })
+  @Column({
+    type: 'enum',
+    enum: WorkspaceRole,
+    default: WorkspaceRole.MEMBER_WORKSPACE,
+  })
   role: WorkspaceRole;
 
   @Column({

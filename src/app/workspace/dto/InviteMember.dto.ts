@@ -10,7 +10,7 @@ export class InviteMemberDto {
 
   @ApiProperty({
     enum: WorkspaceRole,
-    default: WorkspaceRole.MEMBER,
+    default: WorkspaceRole.MEMBER_WORKSPACE,
     required: false,
   })
   @IsEnum(WorkspaceRole)

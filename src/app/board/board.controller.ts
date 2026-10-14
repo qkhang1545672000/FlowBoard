@@ -53,6 +53,16 @@ export class BoardController {
   ) {
     return this.boardService.update(id, updateBoardDto);
   }
+  @Get(':boardId/members')
+  @ApiOperation({
+    summary: 'Lấy danh sách và tổng số lượng thành viên trong Board',
+  })
+  getListMemberProject(
+    @Param('boardId', ParseUUIDPipe) boardId: string,
+    @CurrentUser() user: User, // Đảm bảo đã xác thực người dùng qua JWT/Session
+  ) {
+    return this.boardService.getListMemberProject(boardId);
+  }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa một Board' })

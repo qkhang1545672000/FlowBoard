@@ -54,6 +54,7 @@ export class TaskController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateTaskDto: UpdateTaskDto,
   ) {
+    console.log('ádfasfs', updateTaskDto);
     return this.taskService.update(id, updateTaskDto);
   }
 

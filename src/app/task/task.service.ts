@@ -8,6 +8,8 @@ import { MoveTaskDto } from './dto/move-task.dto';
 import { Label } from 'src/app/task/entities/label.entity';
 import { ColumnEntity } from '../column/entities/column.entity';
 
+import { BoardService } from '../board/board.service';
+
 @Injectable()
 export class TaskService {
   constructor(
@@ -17,6 +19,8 @@ export class TaskService {
     private readonly labelRepository: Repository<Label>,
     @InjectRepository(ColumnEntity)
     private readonly columnRepository: Repository<ColumnEntity>,
+
+    private readonly boardService: BoardService,
   ) {}
 
   /**
@@ -47,7 +51,18 @@ export class TaskService {
       labels,
     });
 
-    return await this.taskRepository.save(newTask);
+    const savedTask = await this.taskRepository.save(newTask);
+
+    // Truy vấn lại để ép TypeORM trả về đầy đủ các quan hệ (assignee, labels)
+    // khớp hoàn toàn với cấu trúc interface Task ở phía Frontend
+    return await this.taskRepository.findOne({
+      where: { id: savedTask.id },
+      relations: {
+        assignee: true,
+        column: true,
+        labels: true,
+      },
+    });
   }
 
   /**
@@ -108,10 +123,12 @@ export class TaskService {
    * 4. CẬP NHẬT TASK
    */
   async update(id: string, updateTaskDto: UpdateTaskDto): Promise<Task> {
-    const { labelIds, ...updateData } = updateTaskDto;
     const task = await this.findOne(id);
+    const { labelIds, assigneeId, ...updateData } = updateTaskDto;
 
-    // Cập nhật quan hệ Labels nếu có truyền
+    console.log('Dữ liệu nhận vào updateTaskDto:', updateTaskDto);
+
+    // 1. Cập nhật Labels nếu có truyền lên (khác undefined)
     if (labelIds !== undefined) {
       task.labels =
         labelIds.length > 0
@@ -119,8 +136,34 @@ export class TaskService {
           : [];
     }
 
-    Object.assign(task, updateData);
-    return await this.taskRepository.save(task);
+    // 2. Cập nhật AssigneeId và quan hệ Assignee
+    if (assigneeId) {
+      const userExists =
+        await this.boardService.getUserInBoardMember(assigneeId);
+
+      if (!userExists) {
+        throw new NotFoundException(
+          'Thành viên được chỉ định không tồn tại trong hệ thống.',
+        );
+      }
+      task.assigneeId = userExists.userId;
+      task.assignee = userExists.user;
+    } else {
+      task.assigneeId = null;
+      task.assignee = null;
+    }
+
+    // 3. Chỉ gán các trường khác nếu chúng KHÁC undefined (Tránh ghi đè bằng undefined)
+    Object.keys(updateData).forEach((key) => {
+      if (updateData[key] !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        task[key] = updateData[key];
+      }
+    });
+
+    const savedTask = await this.taskRepository.save(task);
+    console.log('Task sau khi save thành công:', savedTask);
+    return savedTask;
   }
 
   /**

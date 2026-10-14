@@ -26,7 +26,7 @@ export class BoardMember extends BaseUuidEntity {
   @Column({
     type: 'enum',
     enum: BoardMemberRole,
-    default: BoardMemberRole.MEMBER,
+    default: BoardMemberRole.BOARD_MEMBER,
   })
   role: BoardMemberRole;
 }
