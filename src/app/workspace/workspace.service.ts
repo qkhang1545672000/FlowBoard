@@ -25,6 +25,7 @@ import { EmailService } from '../email/email.service'; // Điều chỉnh path n
 import { InvitationStatus } from 'src/shared/types/invitation-status.enum';
 import { Board } from '../board/entities/board.entity';
 import { WorkspaceFilterType } from './dto/PaginationQuery.dto';
+import { SessionAuthService } from '../auth/session-auth/session-auth.service';
 interface BoardRaw {
   id: string;
   title: string;
@@ -49,6 +50,7 @@ export class WorkspaceService {
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
+    private readonly sessionAuthService: SessionAuthService,
   ) {}
 
   // ==========================================
@@ -172,14 +174,14 @@ export class WorkspaceService {
   }
 
   async getWorkspaceWithBoards(workspaceId: string) {
-    // 1. Lấy thông tin Workspace kèm theo danh sách thành viên (members -> user)
+    // 1. Lấy thông tin Workspace kèm danh sách thành viên
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
       relations: {
         members: {
-          user: true, // Join relation members -> user
+          user: true,
         },
-      }, // Join bảng members và user
+      },
       select: {
         id: true,
         name: true,
@@ -202,7 +204,14 @@ export class WorkspaceService {
       throw new NotFoundException('Không tìm thấy Workspace');
     }
 
-    // 2. Truy vấn danh sách Boards trong Workspace
+    // 2. Lấy danh sách ID của tất cả user trong workspace
+    const userIds = workspace.members.map((m) => m.user.id);
+
+    // 3. Gọi hàm xác nhận trạng thái online từ SessionAuthService
+    const onlineStatusMap =
+      await this.sessionAuthService.checkUsersOnlineStatus(userIds);
+
+    // 4. Truy vấn danh sách Boards trong Workspace (giữ nguyên logic của bạn)
     const boards = await this.boardRepository
       .createQueryBuilder('board')
       .where('board.workspaceId = :workspaceId', { workspaceId })
@@ -223,12 +232,12 @@ export class WorkspaceService {
         return subQuery
           .select('COUNT(bm.id)', 'membersCount')
           .from('board_members', 'bm')
-          .where('bm.board_id = board.id');
+          .where('board.id = bm.board_id');
       }, 'membersCount')
       .orderBy('board.updatedAt', 'DESC')
       .getRawMany<BoardRaw>();
 
-    // 3. Trả về Response đầy đủ gồm thông tin Workspace, danh sách Members và Boards
+    // 5. Trả về kết quả, map thêm trường isOnline cho từng user
     return {
       id: workspace.id,
       name: workspace.name,
@@ -242,6 +251,7 @@ export class WorkspaceService {
           email: m.user.email,
           name: m.user.name,
           image: m.user.image,
+          isOnline: onlineStatusMap[m.user.id] ?? false, // Gắn trạng thái online tại đây
         },
       })),
       boards: boards.map((b) => ({
