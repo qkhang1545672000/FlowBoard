@@ -21,6 +21,9 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { MoveTaskDto } from './dto/move-task.dto';
 import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
+import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
+import { User } from '../user/entities/user.entity';
+import { AssignTaskDto } from './dto/AssignTask.dto';
 
 @UseGuards(SessionAuthGuard)
 @ApiTags('Tasks')
@@ -31,8 +34,8 @@ export class TaskController {
 
   @Post()
   @ApiOperation({ summary: 'Tạo mới một Task' })
-  create(@Body() createTaskDto: CreateTaskDto) {
-    return this.taskService.create(createTaskDto);
+  create(@Body() createTaskDto: CreateTaskDto, @CurrentUser() user: User) {
+    return this.taskService.create(createTaskDto, user);
   }
 
   @Get()
@@ -47,6 +50,22 @@ export class TaskController {
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.taskService.findOne(id);
   }
+  @Patch(':id/assign')
+  @ApiOperation({
+    summary: 'Gán danh sách thành viên và phân quyền Leader cho Task',
+  })
+  assignMembers(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() assignTaskDto: AssignTaskDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.taskService.addMemberForTask(
+      id,
+      assignTaskDto.userIds,
+      user.id,
+      assignTaskDto.leaderId,
+    );
+  }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Cập nhật thông tin Task' })
@@ -54,7 +73,6 @@ export class TaskController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateTaskDto: UpdateTaskDto,
   ) {
-    console.log('ádfasfs', updateTaskDto);
     return this.taskService.update(id, updateTaskDto);
   }
 

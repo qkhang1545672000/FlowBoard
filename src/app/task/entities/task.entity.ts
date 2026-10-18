@@ -6,13 +6,14 @@ import {
   JoinTable,
   ManyToMany,
   ManyToOne,
+  OneToMany,
   JoinColumn,
   DeleteDateColumn,
 } from 'typeorm';
 import { TaskPriority } from 'src/shared/types/task-priority.enum';
 import { ColumnEntity } from '../../column/entities/column.entity';
-import { User } from 'src/app/user/entities/user.entity';
 import { Label } from 'src/app/task/entities/label.entity';
+import { TaskMember } from './task-member.entity';
 
 @Entity('tasks')
 @Index(['columnId', 'position'])
@@ -23,14 +24,6 @@ export class Task extends BaseUuidEntity {
   @ManyToOne(() => ColumnEntity, (col) => col.tasks, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'column_id' })
   column: ColumnEntity;
-
-  @Index()
-  @Column({ type: 'uuid', nullable: true })
-  assigneeId: string | null;
-
-  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
-  @JoinColumn({ name: 'assignee_id' })
-  assignee: User | null;
 
   @Column({ type: 'text' })
   title: string;
@@ -61,4 +54,8 @@ export class Task extends BaseUuidEntity {
     inverseJoinColumn: { name: 'label_id', referencedColumnName: 'id' },
   })
   labels: Label[];
+
+  // Quan hệ 1-N với danh sách tất cả thành viên (bao gồm LEADER & MEMBER) trong Task
+  @OneToMany(() => TaskMember, (member) => member.task)
+  members: TaskMember[];
 }

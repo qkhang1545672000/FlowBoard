@@ -27,11 +27,6 @@ export class CreateTaskDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Vị trí thứ tự sắp xếp' })
-  @IsOptional()
-  @IsNumber()
-  position?: number;
-
   @ApiPropertyOptional({ enum: TaskPriority, default: TaskPriority.MEDIUM })
   @IsOptional()
   @IsEnum(TaskPriority)
@@ -41,11 +36,6 @@ export class CreateTaskDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string;
-
-  @ApiPropertyOptional({ description: 'ID người thực hiện' })
-  @IsOptional()
-  @IsUUID()
-  assigneeId?: string;
 
   @ApiPropertyOptional({
     description: 'Danh sách ID của các Label đính kèm',

@@ -11,6 +11,10 @@ import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from '../column/dto/update-board.dto';
 import { BoardMemberRole } from 'src/shared/types/BoardMemberRole.enum';
 import { WorkspaceMember } from '../workspace/entities/workspace-member.entity';
+import {
+  calculateDynamicProgress,
+  calculateTimeRemaining,
+} from 'src/shared/helpers/caculaterDate';
 
 @Injectable()
 export class BoardService {
@@ -130,7 +134,7 @@ export class BoardService {
       relations: {
         columns: {
           tasks: {
-            assignee: true,
+            members: true,
             labels: true,
           },
         },
@@ -150,10 +154,12 @@ export class BoardService {
             dueDate: true,
             // Hoặc đếm qua relation _count nếu dùng Prisma/TypeORM
 
-            assignee: {
+            members: {
               id: true,
-              name: true,
-              image: true, // Dùng làm Avatar
+              user: {
+                image: true,
+                name: true,
+              },
             },
             labels: {
               id: true,
@@ -186,8 +192,19 @@ export class BoardService {
         },
         columns: {
           tasks: {
-            assignee: true,
+            members: {
+              user: true,
+            },
             labels: true,
+          },
+        },
+      },
+      // Thêm sắp xếp thứ tự cho Column (nếu Column của bạn cũng có trường position)
+      order: {
+        columns: {
+          position: 'ASC',
+          tasks: {
+            position: 'ASC', // <--- QUAN TRỌNG NHẤT: Ép danh sách task luôn sắp xếp theo position tăng dần
           },
         },
       },
@@ -198,6 +215,24 @@ export class BoardService {
       throw new NotFoundException(
         'Board không tồn tại hoặc bạn không có quyền truy cập',
       );
+    }
+
+    // --- DUYỆT QUA CÁC COLUMN VÀ TASK ĐỂ GÁN PROGRESS (ĐÃ VIẾT Ở NGOÀI) ---
+    if (board.columns) {
+      board.columns.forEach((column) => {
+        if (column.tasks) {
+          column.tasks.forEach((task) => {
+            // Gán tiến độ (%)
+            (task as any).progress = calculateDynamicProgress(
+              task.createdAt,
+              task.dueDate,
+            );
+
+            // Gán thời gian còn lại dạng chữ
+            (task as any).timeRemaining = calculateTimeRemaining(task.dueDate);
+          });
+        }
+      });
     }
 
     return board;

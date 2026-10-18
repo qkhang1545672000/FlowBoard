@@ -19,6 +19,7 @@ import { BoardModule } from './app/board/board.module';
 import { ChatModule } from './app/chat/chat.module';
 import { ColumnModule } from './app/column/column.module';
 import { TaskModule } from './app/task/task.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 const envFile =
   process.env.NODE_ENV === 'production'
@@ -34,6 +35,7 @@ const envFile =
       envFilePath: envFile,
       load: allConfigs,
     }),
+    ScheduleModule.forRoot(),
     PinoLoggerModule,
     AppThrottlerModule,
     TypeOrmModule.forRootAsync({

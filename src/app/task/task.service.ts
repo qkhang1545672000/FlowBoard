@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Task } from './entities/task.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -9,6 +14,9 @@ import { Label } from 'src/app/task/entities/label.entity';
 import { ColumnEntity } from '../column/entities/column.entity';
 
 import { BoardService } from '../board/board.service';
+import { User } from '../user/entities/user.entity';
+import { TaskMember } from './entities/task-member.entity';
+import { TaskMemberRole } from 'src/shared/types/TaskMemberRole.enum';
 
 @Injectable()
 export class TaskService {
@@ -19,52 +27,86 @@ export class TaskService {
     private readonly labelRepository: Repository<Label>,
     @InjectRepository(ColumnEntity)
     private readonly columnRepository: Repository<ColumnEntity>,
+    @InjectRepository(TaskMember)
+    private readonly taskMemberRepository: Repository<TaskMember>,
 
     private readonly boardService: BoardService,
+    private readonly dataSource: DataSource,
   ) {}
-
+  private readonly logger = new Logger(TaskService.name);
   /**
    * 1. THÊM TASK MỚI
    */
-  async create(createTaskDto: CreateTaskDto): Promise<Task> {
-    const { labelIds, position, ...taskData } = createTaskDto;
+  async create(createTaskDto: CreateTaskDto, user: User): Promise<Task> {
+    // Đã loại bỏ 'position' ra khỏi Destructuring
+    const { labelIds, dueDate, ...taskData } = createTaskDto;
 
-    // Tự động tính position nếu client không truyền
-    let calculatedPosition = position;
-    if (calculatedPosition === undefined || calculatedPosition === null) {
-      const lastTask = await this.taskRepository.findOne({
-        where: { columnId: taskData.columnId },
-        order: { position: 'DESC' },
-      });
-      calculatedPosition = lastTask ? lastTask.position + 1000 : 1000;
-    }
+    // 1. Luôn tự động tìm task cuối cùng trong cột để tính position mới (tăng dần +1000)
+    const lastTask = await this.taskRepository.findOne({
+      where: { columnId: taskData.columnId },
+      order: { position: 'DESC' },
+    });
+    const calculatedPosition = lastTask
+      ? Number(lastTask.position) + 1000
+      : 1000;
 
-    // Load các Labels nếu có truyền labelIds
+    // 2. Load danh sách Labels nếu có truyền labelIds
     let labels: Label[] = [];
     if (labelIds && labelIds.length > 0) {
       labels = await this.labelRepository.findBy({ id: In(labelIds) });
     }
 
-    const newTask = this.taskRepository.create({
-      ...taskData,
-      position: calculatedPosition,
-      labels,
-    });
+    // 3. Thực thi lưu Task & TaskMember trong một Transaction
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    const savedTask = await this.taskRepository.save(newTask);
+    let savedTaskId: string;
 
-    // Truy vấn lại để ép TypeORM trả về đầy đủ các quan hệ (assignee, labels)
-    // khớp hoàn toàn với cấu trúc interface Task ở phía Frontend
+    try {
+      // Tạo và lưu Task với position tự động tính
+      const newTask = queryRunner.manager.create(Task, {
+        ...taskData,
+        // --- AN TOÀN HƠN: Chỉ khởi tạo Date nếu dueDate có giá trị, ngược lại gán null ---
+        dueDate: dueDate ? new Date(dueDate) : null,
+        position: calculatedPosition,
+        labels,
+      });
+      const savedTask = await queryRunner.manager.save(newTask);
+      savedTaskId = savedTask.id;
+
+      // Tự động gán người tạo Task làm TASK_LEADER
+      const newMember = queryRunner.manager.create(TaskMember, {
+        taskId: savedTaskId,
+        userId: user.id,
+        role: TaskMemberRole.TASK_LEADER,
+      });
+      await queryRunner.manager.save(newMember);
+
+      // Commit Transaction nếu tất cả thành công
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      // Rollback dữ liệu nếu xảy ra lỗi trong quá trình lưu
+      await queryRunner.rollbackTransaction();
+      throw new InternalServerErrorException(
+        'Không thể tạo công việc, vui lòng thử lại.',
+      );
+    } finally {
+      await queryRunner.release();
+    }
+
+    // 4. Truy vấn lại để trả về đầy đủ các Relations
     return await this.taskRepository.findOne({
-      where: { id: savedTask.id },
+      where: { id: savedTaskId },
       relations: {
-        assignee: true,
         column: true,
         labels: true,
+        members: {
+          user: true,
+        },
       },
     });
   }
-
   /**
    * 2. LẤY CHI TIẾT TASK
    */
@@ -72,7 +114,7 @@ export class TaskService {
     const task = await this.taskRepository.findOne({
       where: { id },
       relations: {
-        assignee: true,
+        members: true,
         labels: true,
         column: true,
       },
@@ -84,6 +126,95 @@ export class TaskService {
 
     return task;
   }
+  async addMemberForTask(
+    taskId: string,
+    userIds: string[],
+
+    currentUserId: string, // Thêm tham số này để fallback
+    leaderId?: string,
+  ) {
+    // 1. Kiểm tra task có tồn tại không
+    const task = await this.taskRepository.findOne({
+      where: { id: taskId },
+      relations: {
+        members: {
+          user: true,
+        },
+      },
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task với ID ${taskId} không tồn tại.`);
+    }
+
+    const existingMembers = task.members || [];
+
+    // --- LOGIC MỚI: NẾU DANH SÁCH GỬI LÊN RỖNG ---
+    let finalUserIds = userIds || [];
+    let finalLeaderId = leaderId;
+
+    if (finalUserIds.length === 0) {
+      // Nếu không chọn ai mà có thông tin người đang thao tác, tự động gán chính họ
+      if (currentUserId) {
+        finalUserIds = [currentUserId];
+        finalLeaderId = currentUserId; // Đồng thời là leader luôn
+      } else {
+        // Trường hợp không có currentUserId (hi hữu), xóa sạch như cũ hoặc xử lý tùy ý
+        if (existingMembers.length > 0) {
+          await this.taskMemberRepository.remove(existingMembers);
+        }
+        return { message: 'Đã xóa toàn bộ thành viên khỏi task thành công' };
+      }
+    }
+    // ---------------------------------------------
+
+    // Xác định ai sẽ là Leader
+    let targetLeaderId = finalLeaderId;
+    if (!targetLeaderId || !finalUserIds.includes(targetLeaderId)) {
+      targetLeaderId = finalUserIds[0];
+    }
+
+    // 3. Xóa các thành viên không còn nằm trong danh sách mới
+    const membersToRemove = existingMembers.filter(
+      (m) => !finalUserIds.includes(m.userId),
+    );
+    if (membersToRemove.length > 0) {
+      await this.taskMemberRepository.remove(membersToRemove);
+    }
+
+    // 4. Cập nhật hoặc Thêm mới thành viên
+    for (const userId of finalUserIds) {
+      const role =
+        userId === targetLeaderId
+          ? TaskMemberRole.TASK_LEADER
+          : TaskMemberRole.TASK_MEMBER;
+
+      const existingMember = existingMembers.find((m) => m.userId === userId);
+      if (existingMember) {
+        if (existingMember.role !== role) {
+          existingMember.role = role;
+          await this.taskMemberRepository.save(existingMember);
+        }
+      } else {
+        const newMember = this.taskMemberRepository.create({
+          taskId,
+          userId,
+          role,
+        });
+        await this.taskMemberRepository.save(newMember);
+      }
+    }
+
+    // Trả về thông tin task kèm danh sách member mới nhất
+    return this.taskRepository.findOne({
+      where: { id: taskId },
+      relations: {
+        members: {
+          user: true,
+        },
+      },
+    });
+  }
 
   /**
    * 3. LẤY DANH SÁCH TASK THEO COLUMN ID
@@ -93,7 +224,7 @@ export class TaskService {
       where: { columnId },
       order: { position: 'ASC' },
       relations: {
-        assignee: true,
+        members: true,
         labels: true,
       },
       select: {
@@ -105,10 +236,12 @@ export class TaskService {
         priority: true,
         dueDate: true,
         isCompleted: true,
-        assignee: {
-          id: true,
-          name: true,
-          image: true,
+        members: {
+          user: {
+            id: true,
+            name: true,
+            image: true,
+          },
         },
         labels: {
           id: true,
@@ -124,11 +257,11 @@ export class TaskService {
    */
   async update(id: string, updateTaskDto: UpdateTaskDto): Promise<Task> {
     const task = await this.findOne(id);
-    const { labelIds, assigneeId, ...updateData } = updateTaskDto;
 
-    console.log('Dữ liệu nhận vào updateTaskDto:', updateTaskDto);
+    // 1. Lọc bỏ hẳn 'position' và tách lấy dueDate, labelIds ra xử lý riêng
+    const { labelIds, dueDate, ...updateData } = updateTaskDto;
 
-    // 1. Cập nhật Labels nếu có truyền lên (khác undefined)
+    // 2. Cập nhật Labels nếu có truyền lên
     if (labelIds !== undefined) {
       task.labels =
         labelIds.length > 0
@@ -136,24 +269,16 @@ export class TaskService {
           : [];
     }
 
-    // 2. Cập nhật AssigneeId và quan hệ Assignee
-    if (assigneeId) {
-      const userExists =
-        await this.boardService.getUserInBoardMember(assigneeId);
+    // 3. Xử lý cập nhật dueDate (ép từ string sang Date) và reset isReminderSent
+    if (dueDate !== undefined) {
+      // Ép kiểu chuỗi ISO từ DTO sang đối tượng Date của JavaScript
+      task.dueDate = dueDate ? new Date(dueDate) : null;
 
-      if (!userExists) {
-        throw new NotFoundException(
-          'Thành viên được chỉ định không tồn tại trong hệ thống.',
-        );
-      }
-      task.assigneeId = userExists.userId;
-      task.assignee = userExists.user;
-    } else {
-      task.assigneeId = null;
-      task.assignee = null;
+      // Khi đổi hạn mới, ta cho phép hệ thống quét nhắc nhở lại từ đầu
+      // (Khuyên dùng: Bạn nên khai báo isReminderSent: boolean trong Task entity để không cần dùng as any)
     }
 
-    // 3. Chỉ gán các trường khác nếu chúng KHÁC undefined (Tránh ghi đè bằng undefined)
+    // 4. Chỉ gán các trường khác (priority, title, description,...) nếu chúng KHÁC undefined
     Object.keys(updateData).forEach((key) => {
       if (updateData[key] !== undefined) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -162,7 +287,7 @@ export class TaskService {
     });
 
     const savedTask = await this.taskRepository.save(task);
-    console.log('Task sau khi save thành công:', savedTask);
+
     return savedTask;
   }
 
@@ -209,7 +334,7 @@ export class TaskService {
     return await this.taskRepository.findOne({
       where: { id },
       relations: {
-        assignee: true,
+        members: true,
         labels: true,
         column: true,
       },

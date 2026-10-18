@@ -124,14 +124,16 @@ export class ColumnService {
     return await this.columnRepository.find({
       where: { boardId },
       order: {
-        position: 'ASC', // Sắp xếp thứ tự các cột từ trái sang phải
+        position: 'ASC',
         tasks: {
-          position: 'ASC', // Sắp xếp các task trong từng cột từ trên xuống dưới
+          position: 'ASC',
         },
       },
       relations: {
         tasks: {
-          assignee: true,
+          members: {
+            user: true,
+          },
           labels: true,
         },
       },
@@ -151,10 +153,17 @@ export class ColumnService {
           dueDate: true,
           isCompleted: true,
 
-          assignee: {
-            id: true,
-            name: true,
-            image: true,
+          // 🟢 BỔ SUNG CÁC TRƯỜNG CỦA TASKMEMBER VÀO ĐÂY:
+          members: {
+            id: true, // Khóa chính của TaskMember (Bắt buộc)
+            taskId: true, // Khóa ngoại (Bắt buộc)
+            userId: true, // Khóa ngoại (Bắt buộc)
+            role: true, // Vai trò (TASK_LEADER / TASK_MEMBER)
+            user: {
+              id: true,
+              name: true,
+              image: true,
+            },
           },
           labels: {
             id: true,

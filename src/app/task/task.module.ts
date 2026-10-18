@@ -7,11 +7,14 @@ import { Label } from './entities/label.entity';
 
 import { ColumnEntity } from '../column/entities/column.entity';
 
-import { UserModule } from '../user/user.module';
 import { BoardModule } from '../board/board.module';
+import { TaskMember } from './entities/task-member.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Task, Label, ColumnEntity]), BoardModule],
+  imports: [
+    TypeOrmModule.forFeature([Task, Label, ColumnEntity, TaskMember]),
+    BoardModule,
+  ],
   controllers: [TaskController],
   providers: [TaskService],
   exports: [TaskService],

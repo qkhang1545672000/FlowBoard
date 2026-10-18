@@ -18,7 +18,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       ...dbConfig,
       autoLoadEntities: true,
       synchronize: false,
-      logging: isDev ? ['error', 'warn', 'query'] : ['error'],
+      logging: isDev ? ['error', 'warn'] : ['error'],
       migrationsRun: false,
       retryAttempts: 5,
       retryDelay: 3000,
@@ -26,3 +26,4 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
     };
   }
 }
+//  logging: isDev ? ['error', 'warn', 'query'] : ['error'],
