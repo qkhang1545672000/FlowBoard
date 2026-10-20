@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -156,10 +157,20 @@ export class WorkspaceController {
   })
   @ApiOkResponse({ description: 'Cập nhật vai trò thành công' })
   async updateMemberRole(
+    @CurrentUser() user: User,
     @Param('id') workspaceId: string,
     @Param('userId') userId: string,
     @Body('role') role: WorkspaceRole,
   ) {
+    const isOwn = await this.workspaceService.checkIsOwnOrLeaderWorkspace(
+      workspaceId,
+      user.id,
+    );
+    if (!isOwn) {
+      throw new ForbiddenException(
+        'Bạn không có quyền thực hiện thao tác này!',
+      );
+    }
     return this.workspaceService.updateMemberRole(workspaceId, userId, role);
   }
 

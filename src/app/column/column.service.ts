@@ -10,6 +10,7 @@ import { CreateColumnDto } from './dto/create-column.dto';
 import { UpdateColumnDto } from '../board/dto/update-column.dto';
 
 import { BoardService } from '../board/board.service';
+import { WorkspaceService } from '../workspace/workspace.service';
 
 @Injectable()
 export class ColumnService {
@@ -18,6 +19,7 @@ export class ColumnService {
     private readonly columnRepository: Repository<ColumnEntity>,
 
     private readonly boardService: BoardService,
+    private readonly workspaceService: WorkspaceService,
   ) {}
 
   /**
@@ -73,10 +75,14 @@ export class ColumnService {
     dto: UpdateColumnDto,
     userId: string,
   ): Promise<ColumnEntity> {
-    const isOwn = await this.boardService.checkIsOwnOrLeader(
-      dto.boardId,
-      userId,
-    );
+    let isOwn = await this.boardService.checkIsOwnOrLeader(dto.boardId, userId);
+
+    if (isOwn == false) {
+      isOwn = await this.workspaceService.checkIsOwnOrLeaderWorkspaceWithBoard(
+        dto.boardId,
+        userId,
+      );
+    }
     if (!isOwn) {
       throw new ForbiddenException(
         'Bạn không có quyền thực hiện thao tác này!',

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In, FindOperator } from 'typeorm';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 
@@ -56,6 +56,48 @@ export class WorkspaceService {
   // ==========================================
   // 1. TRUY VẤN (READ)
   // ==========================================
+  async checkIsOwnOrLeaderWorkspace(
+    workspaceId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const member = await this.memberRepository.findOne({
+      where: {
+        workspaceId,
+        userId,
+        role: In([WorkspaceRole.OWNER]), // Kiểm tra role thuộc ADMIN hoặc LEADER
+      },
+    });
+
+    return !!member; // Trả về true nếu tìm thấy, false nếu không tìm thấy
+  }
+
+  async checkIsOwnOrLeaderWorkspaceWithBoard(
+    boardId: string,
+    userId: string,
+  ): Promise<boolean> {
+    // 1. Tìm board theo boardId để lấy workspaceId liên kết
+    const board = await this.boardRepository.findOne({
+      where: { id: boardId },
+    });
+
+    // Nếu không tìm thấy board, trả về false luôn
+    if (!board || !board.workspaceId) {
+      return false;
+    }
+
+    // 2. Dùng workspaceId và userId để tìm trong bảng WorkspaceMember
+    // Kiểm tra xem user có mang quyền OWNER hoặc LEADER_WORKSPACE không
+    const member = await this.memberRepository.findOne({
+      where: {
+        workspaceId: board.workspaceId,
+        userId: userId,
+        role: In([WorkspaceRole.OWNER, WorkspaceRole.LEADER_WORKSPACE]),
+      },
+    });
+
+    // 3. Trả về true nếu tìm thấy bản ghi thỏa mãn, ngược lại trả về false
+    return !!member;
+  }
 
   async getWorkspaceById(id: string): Promise<Workspace> {
     const workspace = await this.workspaceRepository.findOne({
@@ -83,22 +125,25 @@ export class WorkspaceService {
     const skip = (page - 1) * limit;
 
     // 1. Tạo điều kiện lọc cơ bản theo userId
-    const whereCondition: any = { userId };
+    const whereCondition: {
+      userId: string;
+      role?: WorkspaceRole | FindOperator<WorkspaceRole>;
+    } = { userId };
 
     // 2. Lọc theo type truyền vào
     if (type === WorkspaceFilterType.OWNED) {
       // Chỉ lấy Workspace do user này sở hữu / làm OWNER
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       whereCondition.role = WorkspaceRole.OWNER;
     } else if (type === WorkspaceFilterType.JOINED) {
-      // Chỉ lấy Workspace do người khác tạo mà user này tham gia
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      whereCondition.role = WorkspaceRole.MEMBER_WORKSPACE;
+      // 👉 Dùng In() để lấy cả MEMBER_WORKSPACE và LEADER_WORKSPACE
+      whereCondition.role = In([
+        WorkspaceRole.MEMBER_WORKSPACE,
+        WorkspaceRole.LEADER_WORKSPACE,
+      ]);
     }
 
     // 3. Truy vấn bảng WorkspaceMember
     const [members, total] = await this.memberRepository.findAndCount({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       where: whereCondition,
       relations: {
         workspace: {
@@ -337,16 +382,53 @@ export class WorkspaceService {
     userId: string,
     role: WorkspaceRole,
   ): Promise<WorkspaceMember> {
-    const member = await this.memberRepository.findOne({
-      where: { workspaceId, userId },
-    });
+    // Sử dụng transaction của TypeORM để đảm bảo tính an toàn dữ liệu
+    return await this.memberRepository.manager.transaction(
+      async (transactionalEntityManager) => {
+        const memberRepository =
+          transactionalEntityManager.getRepository(WorkspaceMember);
 
-    if (!member) {
-      apiNotFound('errors.workspace.memberNotFound');
-    }
+        // 1. Tìm thành viên cần cập nhật role
+        const member = await memberRepository.findOne({
+          where: { workspaceId, userId },
+        });
 
-    member.role = role;
-    return this.memberRepository.save(member);
+        if (!member) {
+          apiNotFound('errors.workspace.memberNotFound');
+        }
+
+        // 🛡️ BẢO VỆ OWNER: Không cho phép hạ cấp hoặc đổi role của Owner qua hàm này
+        // (Tránh việc Owner bị mất quyền tối cao khi được gán nhãn Leader)
+        if (
+          member.role === WorkspaceRole.OWNER &&
+          role !== WorkspaceRole.OWNER
+        ) {
+          // Tùy thuộc vào cách dự án xử lý lỗi (ví dụ: apiBadRequest hoặc throw exception)
+          throw new Error('errors.workspace.cannotChangeOwnerRole');
+        }
+
+        // 2. Nếu role mới được gán là LEADER_WORKSPACE, cần xử lý leader cũ trong workspace
+        if (role === WorkspaceRole.LEADER_WORKSPACE) {
+          const currentLeader = await memberRepository.findOne({
+            where: { workspaceId, role: WorkspaceRole.LEADER_WORKSPACE },
+          });
+
+          // Nếu đã có leader cũ, khác user hiện tại và đảm bảo không đụng đến Owner
+          if (
+            currentLeader &&
+            currentLeader.userId !== userId &&
+            currentLeader.role !== WorkspaceRole.OWNER
+          ) {
+            currentLeader.role = WorkspaceRole.MEMBER_WORKSPACE; // Hạ cấp leader cũ thành member thường
+            await memberRepository.save(currentLeader);
+          }
+        }
+
+        // 3. Cập nhật role mới cho thành viên hiện tại
+        member.role = role;
+        return await memberRepository.save(member);
+      },
+    );
   }
 
   async removeMember(
