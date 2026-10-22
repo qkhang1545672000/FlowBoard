@@ -9,7 +9,6 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { ColumnLockType } from 'src/shared/types/column-lock-type.enum';
-import { string } from 'zod';
 
 interface LockedUser {
   id: string;

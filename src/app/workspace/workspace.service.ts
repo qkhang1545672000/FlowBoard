@@ -431,27 +431,32 @@ export class WorkspaceService {
     );
   }
 
-  async removeMember(
-    workspaceId: string,
-    userId: string,
-  ): Promise<{ success: boolean }> {
+  async removeMember(workspaceId: string, userId: string) {
+    // 1. Tìm thông tin user và email của họ để tìm lời mời tương ứng
     const member = await this.memberRepository.findOne({
       where: { workspaceId, userId },
+      relations: {
+        user: true,
+      }, // Giả sử relation lấy user để có email
     });
 
     if (!member) {
-      apiNotFound('errors.workspace.memberNotFound');
+      throw new NotFoundException('Thành viên không tồn tại trong workspace');
     }
 
-    // Không cho phép xóa OWNER khỏi Workspace trực tiếp
-    if (member.role === WorkspaceRole.OWNER) {
-      throw new ForbiddenException(
-        'Không thể xóa Chủ sở hữu (OWNER) khỏi Workspace',
-      );
-    }
-
+    // 2. Xóa thành viên ra khỏi bảng workspace_members
     await this.memberRepository.remove(member);
-    return { success: true };
+
+    // 3. ⭐️ VÔ HIỆU HÓA LỜI MỜI CŨ CỦA HỌ NGAY LẬP TỨC
+    await this.invitationRepository.update(
+      { workspaceId, email: member.user.email },
+      { status: InvitationStatus.EXPIRED }, // Hoặc tạo một status REVOKED nếu có
+    );
+
+    return {
+      success: true,
+      message: 'Đã xóa thành viên và vô hiệu hóa lời mời cũ',
+    };
   }
 
   // ==========================================
