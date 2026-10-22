@@ -20,6 +20,7 @@ import { ChatModule } from './app/chat/chat.module';
 import { ColumnModule } from './app/column/column.module';
 import { TaskModule } from './app/task/task.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ActivityLogModule } from './app/activity-log/activity-log.module';
 
 const envFile =
   process.env.NODE_ENV === 'production'
@@ -43,7 +44,7 @@ const envFile =
     }),
     UserModule,
     AuthModule,
-
+    ActivityLogModule,
     EmailModule,
     WorkspaceModule,
     BoardModule,

@@ -1,6 +1,6 @@
 import { BaseUuidEntity } from 'src/config/database/base-uuid.entity';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { Board } from './board.entity';
+import { Board } from '../../board/entities/board.entity';
 import { User } from 'src/app/user/entities/user.entity';
 
 @Entity('activity_logs')
@@ -9,7 +9,7 @@ export class ActivityLog extends BaseUuidEntity {
   boardId: string;
 
   @ManyToOne(() => Board, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'boardId' })
+  @JoinColumn({ name: 'board_id' })
   board: Board;
 
   @Column({ type: 'uuid' })

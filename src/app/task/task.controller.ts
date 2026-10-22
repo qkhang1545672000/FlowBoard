@@ -81,16 +81,17 @@ export class TaskController {
     summary: 'Kéo thả / Di chuyển Task sang cột hoặc vị trí mới',
   })
   move(
+    @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() moveTaskDto: MoveTaskDto,
   ) {
-    return this.taskService.move(id, moveTaskDto);
+    return this.taskService.move(id, moveTaskDto, user);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa một Task (Xóa mềm)' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.taskService.remove(id);
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: User) {
+    return this.taskService.remove(id, user);
   }
 
   @Patch(':id/restore')

@@ -51,9 +51,9 @@ export class WorkspaceController {
       boardsCount: ws.boards ? ws.boards.length : 0, // Đếm số lượng board trong workspace
       members: ws.members
         ? ws.members.map((m) => ({
-            _id: m.userId,
-            displayName: m.user?.name || 'Member',
-            avatarUrl: m.user?.image || m.user?.image || null,
+            id: m.userId,
+            name: m.user?.name || 'Member',
+            image: m.user?.image || m.user?.image || null,
             joinedAt: m.createdAt,
           }))
         : [],
