@@ -24,6 +24,14 @@ export class AuthGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private socketUserMap = new Map<string, string>(); // socketId -> userId
   private disconnectTimeouts = new Map<string, NodeJS.Timeout>();
 
+  /**
+   * Hàm kiểm tra xem một user có đang online thực sự qua WebSocket hay không
+   */
+  isUserOnline(userId: string): boolean {
+    const sockets = this.userSockets.get(userId);
+    return !!sockets && sockets.size > 0;
+  }
+
   handleConnection(client: Socket) {
     console.log(`[AuthGateway] Client đã kết nối: ${client.id}`);
   }

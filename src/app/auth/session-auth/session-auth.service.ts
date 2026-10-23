@@ -1,14 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, MoreThan } from 'typeorm'; // Thêm In và MoreThan nếu chưa có
+import { Repository } from 'typeorm';
 import { Session } from '../entities/session.entity';
 import { extractSessionTokenFromHeaders } from 'src/shared/utils/request-session.util';
+import { AuthGateway } from '../auth.gateway'; // Đảm bảo đúng đường dẫn tới auth.gateway
 
 @Injectable()
 export class SessionAuthService {
   constructor(
     @InjectRepository(Session)
     private readonly sessionRepo: Repository<Session>,
+    @Inject(forwardRef(() => AuthGateway))
+    private readonly authGateway: AuthGateway,
   ) {}
 
   async resolveSessionContext(
@@ -46,7 +49,7 @@ export class SessionAuthService {
   }
 
   /**
-   * Hàm riêng kiểm tra trạng thái online của một danh sách User ID dựa vào bảng Session
+   * Kiểm tra trạng thái online thực tế dựa vào WebSocket connection trong AuthGateway
    */
   async checkUsersOnlineStatus(
     userIds: string[],
@@ -55,24 +58,10 @@ export class SessionAuthService {
       return {};
     }
 
-    // Tìm tất cả các session hợp lệ của các user này chưa hết hạn
-    const activeSessions = await this.sessionRepo.find({
-      where: {
-        userId: In(userIds),
-        expiresAt: MoreThan(new Date()),
-      },
-      select: {
-        userId: true,
-      },
-    });
-
-    // Tạo Set chứa các userId đang online để tra cứu O(1)
-    const onlineSet = new Set(activeSessions.map((s) => s.userId));
-
-    // Trả về map dạng { [userId]: true/false }
     const result: Record<string, boolean> = {};
     for (const id of userIds) {
-      result[id] = onlineSet.has(id);
+      // Tra cứu trực tiếp xem user có đang mở kết nối WebSocket thực tế hay không
+      result[id] = this.authGateway.isUserOnline(id);
     }
 
     return result;
