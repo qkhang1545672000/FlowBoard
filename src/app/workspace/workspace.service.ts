@@ -249,14 +249,15 @@ export class WorkspaceService {
       throw new NotFoundException('Không tìm thấy Workspace');
     }
 
-    // 2. Lấy danh sách ID của tất cả user trong workspace
-    const userIds = workspace.members.map((m) => m.user.id);
+    // 2. Lấy danh sách ID của tất cả user trong workspace (Thêm ?? [] để an toàn tuyệt đối)
+    const membersList = workspace.members ?? [];
+    const userIds = membersList.map((m) => m.user.id);
 
     // 3. Gọi hàm xác nhận trạng thái online từ SessionAuthService
     const onlineStatusMap =
       await this.sessionAuthService.checkUsersOnlineStatus(userIds);
 
-    // 4. Truy vấn danh sách Boards trong Workspace (giữ nguyên logic của bạn)
+    // 4. Truy vấn danh sách Boards trong Workspace
     const boards = await this.boardRepository
       .createQueryBuilder('board')
       .where('board.workspaceId = :workspaceId', { workspaceId })
@@ -287,16 +288,16 @@ export class WorkspaceService {
       id: workspace.id,
       name: workspace.name,
       description: workspace.description,
-      members: workspace.members.map((m) => ({
+      members: membersList.map((m) => ({
         id: m.id,
         role: m.role,
         joinedAt: m.createdAt,
         user: {
-          id: m.user.id,
-          email: m.user.email,
-          name: m.user.name,
-          image: m.user.image,
-          isOnline: onlineStatusMap[m.user.id] ?? false, // Gắn trạng thái online tại đây
+          id: m.user?.id,
+          email: m.user?.email,
+          name: m.user?.name,
+          image: m.user?.image,
+          isOnline: m.user?.id ? (onlineStatusMap[m.user.id] ?? false) : false,
         },
       })),
       boards: boards.map((b) => ({

@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UserModule } from '../user/user.module';
 import { SessionAuthService } from './session-auth/session-auth.service';
+import { AuthGateway } from './auth.gateway';
 
 @Global()
 @Module({
@@ -14,7 +15,7 @@ import { SessionAuthService } from './session-auth/session-auth.service';
     TypeOrmModule.forFeature([Account, Session, Verification]),
     UserModule,
   ],
-  providers: [SessionAuthService, AuthService],
+  providers: [SessionAuthService, AuthService, AuthGateway],
   exports: [SessionAuthService],
   controllers: [AuthController],
 })
