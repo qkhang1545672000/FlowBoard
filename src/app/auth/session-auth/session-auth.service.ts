@@ -51,6 +51,7 @@ export class SessionAuthService {
   /**
    * Kiểm tra trạng thái online thực tế dựa vào WebSocket connection trong AuthGateway
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async checkUsersOnlineStatus(
     userIds: string[],
   ): Promise<Record<string, boolean>> {
