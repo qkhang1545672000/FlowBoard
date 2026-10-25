@@ -32,6 +32,11 @@ export class CreateTaskDto {
   @IsEnum(TaskPriority)
   priority?: TaskPriority;
 
+  @ApiPropertyOptional({ description: 'Thời gian bắt đầu' })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
   @ApiPropertyOptional({ description: 'Thời hạn hoàn thành' })
   @IsOptional()
   @IsDateString()

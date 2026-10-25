@@ -199,37 +199,39 @@ export class BoardService {
           },
         },
       },
-      // Thêm sắp xếp thứ tự cho Column (nếu Column của bạn cũng có trường position)
+      // Thêm sắp xếp thứ tự cho Column và Task
       order: {
         columns: {
           position: 'ASC',
           tasks: {
-            position: 'ASC', // <--- QUAN TRỌNG NHẤT: Ép danh sách task luôn sắp xếp theo position tăng dần
+            position: 'ASC',
           },
         },
       },
     });
 
     if (!board) {
-      // Trả về 404 hoặc 403 Forbidden để bảo mật thông tin
       throw new NotFoundException(
         'Board không tồn tại hoặc bạn không có quyền truy cập',
       );
     }
 
-    // --- DUYỆT QUA CÁC COLUMN VÀ TASK ĐỂ GÁN PROGRESS (ĐÃ VIẾT Ở NGOÀI) ---
+    // --- DUYỆT QUA CÁC COLUMN VÀ TASK ĐỂ GÁN PROGRESS DỰA TRÊN startDate & dueDate ---
     if (board.columns) {
       board.columns.forEach((column) => {
         if (column.tasks) {
           column.tasks.forEach((task) => {
-            // Gán tiến độ (%)
+            // Gán tiến độ (%) dựa vào startDate và dueDate
             (task as any).progress = calculateDynamicProgress(
-              task.createdAt,
+              task.startDate,
               task.dueDate,
             );
 
-            // Gán thời gian còn lại dạng chữ
-            (task as any).timeRemaining = calculateTimeRemaining(task.dueDate);
+            // Gán thời gian còn lại dạng chữ dựa vào dueDate
+            (task as any).timeRemaining = calculateTimeRemaining(
+              task.startDate,
+              task.dueDate,
+            );
           });
         }
       });

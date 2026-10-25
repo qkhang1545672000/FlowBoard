@@ -38,6 +38,9 @@ export class Task extends BaseUuidEntity {
   priority: TaskPriority;
 
   @Column({ type: 'timestamptz', nullable: true })
+  startDate: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
   dueDate: Date | null;
 
   @Column({ type: 'boolean', default: false })
