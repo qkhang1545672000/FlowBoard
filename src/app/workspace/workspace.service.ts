@@ -26,6 +26,10 @@ import { InvitationStatus } from 'src/shared/types/invitation-status.enum';
 import { Board } from '../board/entities/board.entity';
 import { WorkspaceFilterType } from './dto/PaginationQuery.dto';
 import { SessionAuthService } from '../auth/session-auth/session-auth.service';
+import { TaskMember } from '../task/entities/task-member.entity';
+import { Task } from '../task/entities/task.entity';
+import { BoardMember } from '../board/entities/board-member.entity';
+import { ColumnEntity } from '../column/entities/column.entity';
 interface BoardRaw {
   id: string;
   title: string;
@@ -432,32 +436,121 @@ export class WorkspaceService {
     );
   }
 
-  async removeMember(workspaceId: string, userId: string) {
-    // 1. Tìm thông tin user và email của họ để tìm lời mời tương ứng
-    const member = await this.memberRepository.findOne({
-      where: { workspaceId, userId },
-      relations: {
-        user: true,
-      }, // Giả sử relation lấy user để có email
-    });
+  async removeMember(
+    workspaceId: string,
+    userId: string,
+  ): Promise<{ success: boolean; message?: string }> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!member) {
-      throw new NotFoundException('Thành viên không tồn tại trong workspace');
+    try {
+      // 1. Kiểm tra thành viên có tồn tại trong workspace không
+      const member = await queryRunner.manager.findOne(WorkspaceMember, {
+        where: { workspaceId, userId },
+      });
+
+      if (!member) {
+        apiNotFound('errors.workspace.memberNotFound');
+      }
+
+      // Không cho phép xóa OWNER khỏi Workspace trực tiếp
+      if (member.role === WorkspaceRole.OWNER) {
+        throw new ForbiddenException(
+          'Không thể xóa Chủ sở hữu (OWNER) khỏi Workspace',
+        );
+      }
+
+      // 2. Tìm tất cả các Board thuộc Workspace này
+      const boards = await queryRunner.manager.find(Board, {
+        where: { workspaceId },
+      });
+      const boardIds = boards.map((b) => b.id);
+
+      if (boardIds.length > 0) {
+        // Kiểm tra user có trong bảng board_members của các board này không
+        const boardMembers = await queryRunner.manager.find(BoardMember, {
+          where: {
+            boardId: In(boardIds),
+            userId: userId,
+          },
+          relations: { board: true },
+        });
+
+        // Lấy tất cả các Column thuộc các Board đó
+        const columns = await queryRunner.manager.find(ColumnEntity, {
+          where: { boardId: In(boardIds) },
+        });
+        const columnIds = columns.map((c) => c.id);
+
+        let taskMembers: TaskMember[] = [];
+        if (columnIds.length > 0) {
+          const tasks = await queryRunner.manager.find(Task, {
+            where: { columnId: In(columnIds) },
+          });
+          const taskIds = tasks.map((t) => t.id);
+
+          if (taskIds.length > 0) {
+            // Kiểm tra user có được gán vào task nào không (bảng task_members)
+            taskMembers = await queryRunner.manager.find(TaskMember, {
+              where: {
+                taskId: In(taskIds),
+                userId: userId,
+              },
+              relations: {
+                task: {
+                  column: {
+                    board: true,
+                  },
+                },
+              },
+            });
+          }
+        }
+
+        // 3. Tổng hợp danh sách các board mà thành viên này đang tham gia hoặc có task đảm nhiệm
+        const participatingBoardsMap = new Map<string, string>(); // boardId -> boardTitle
+
+        boardMembers.forEach((bm) => {
+          if (bm.board) {
+            participatingBoardsMap.set(bm.board.id, bm.board.title);
+          }
+        });
+
+        taskMembers.forEach((tm) => {
+          const board = tm.task?.column?.board;
+          if (board) {
+            participatingBoardsMap.set(board.id, board.title);
+          }
+        });
+
+        // 4. Nếu thành viên vẫn đang tham gia board/task -> Chặn xóa và thông báo
+        if (participatingBoardsMap.size > 0) {
+          const projectNames = Array.from(participatingBoardsMap.values()).join(
+            ', ',
+          );
+          throw new BadRequestException(
+            `Không thể xóa thành viên này vì đang tham gia vào các dự án/board: [${projectNames}]. Vui lòng gỡ thành viên khỏi các board và task trước khi xóa khỏi workspace.`,
+          );
+        }
+      }
+
+      // 5. Nếu không vướng board hoặc task nào, tiến hành xóa thành viên khỏi workspace
+      await queryRunner.manager.remove(WorkspaceMember, member);
+
+      // Commit Transaction thành công
+      await queryRunner.commitTransaction();
+      return {
+        success: true,
+        message: 'Đã xóa thành viên khỏi workspace thành công',
+      };
+    } catch (error) {
+      // Rollback toàn bộ nếu có lỗi xảy ra
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-
-    // 2. Xóa thành viên ra khỏi bảng workspace_members
-    await this.memberRepository.remove(member);
-
-    // 3. ⭐️ VÔ HIỆU HÓA LỜI MỜI CŨ CỦA HỌ NGAY LẬP TỨC
-    await this.invitationRepository.update(
-      { workspaceId, email: member.user.email },
-      { status: InvitationStatus.EXPIRED }, // Hoặc tạo một status REVOKED nếu có
-    );
-
-    return {
-      success: true,
-      message: 'Đã xóa thành viên và vô hiệu hóa lời mời cũ',
-    };
   }
 
   // ==========================================

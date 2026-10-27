@@ -244,16 +244,86 @@ export class BoardService {
    * Cập nhật thông tin Board
    */
   async update(id: string, updateBoardDto: UpdateBoardDto) {
-    const board = await this.boardRepository.preload({
-      id,
-      ...updateBoardDto,
+    const { memberIds, leaderId, ...boardData } = updateBoardDto;
+
+    // 1. Tìm board hiện tại kèm theo danh sách thành viên cũ trong bảng board_members
+    const board = await this.boardRepository.findOne({
+      where: { id },
+      relations: {
+        members: true, // Lấy các bản ghi trong bảng board_members
+      },
     });
 
     if (!board) {
       throw new NotFoundException('Không tìm thấy Board để cập nhật');
     }
 
-    return this.boardRepository.save(board);
+    // 2. Cập nhật các thông tin cơ bản của board (title, description, slug...)
+    Object.assign(board, boardData);
+    await this.boardRepository.save(board);
+
+    // 3. Xử lý đồng bộ danh sách thành viên (memberIds) và phân quyền leaderId
+    if (memberIds && Array.isArray(memberIds)) {
+      const existingMembers = board.members || [];
+      const existingUserIds = existingMembers.map((m) => m.userId);
+
+      // A. Tìm các userId có trong cũ nhưng KHÔNG có trong danh sách mới -> XÓA
+      const userIdsToRemove = existingUserIds.filter(
+        (userId) => !memberIds.includes(userId),
+      );
+
+      if (userIdsToRemove.length > 0) {
+        await this.boardMemberRepository.delete({
+          boardId: id,
+          userId: In(userIdsToRemove),
+        });
+      }
+
+      // B. Tìm các userId có trong danh sách mới nhưng CHƯA có trong cũ -> THÊM MỚI
+      const userIdsToAdd = memberIds.filter(
+        (userId) => !existingUserIds.includes(userId),
+      );
+
+      if (userIdsToAdd.length > 0) {
+        const newBoardMembers = userIdsToAdd.map((userId) => {
+          const isLeader = userId === leaderId;
+          return this.boardMemberRepository.create({
+            boardId: id,
+            userId: userId,
+            role: isLeader
+              ? BoardMemberRole.BOARD_LEADER
+              : BoardMemberRole.BOARD_MEMBER,
+            // Lưu ý: Thay BoardMemberRole bằng tên enum thực tế của bạn nếu khác (ví dụ: LEADER, MEMBER)
+          });
+        });
+        await this.boardMemberRepository.save(newBoardMembers);
+      }
+
+      // C. Cập nhật lại role cho các thành viên vẫn ở lại (phòng trường hợp đổi Leader)
+      for (const member of existingMembers) {
+        if (!userIdsToRemove.includes(member.userId)) {
+          const shouldBeLeader = member.userId === leaderId;
+          const targetRole = shouldBeLeader
+            ? BoardMemberRole.BOARD_LEADER
+            : BoardMemberRole.BOARD_MEMBER;
+
+          if (member.role !== targetRole) {
+            member.role = targetRole;
+            await this.boardMemberRepository.save(member);
+          }
+        }
+      }
+    }
+
+    // 4. Trả về board sau khi đã cập nhật kèm thông tin thành viên và user mới nhất
+    return this.boardRepository.findOne({
+      where: { id },
+      relations: {
+        members: {
+          user: true,
+        },
+      },
+    });
   }
 
   async getListMemberProject(boardId: string) {
