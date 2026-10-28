@@ -176,13 +176,13 @@ export class BoardService {
    * Lấy chi tiết 1 Board cùng danh sách Columns và Members
    */
   async findBoardByID(boardId: string, userId: string) {
-    // Tìm board kèm theo điều kiện user phải là thành viên của Workspace (hoặc thành viên của Board)
+    // Tìm board kèm theo điều kiện user phải là thành viên của Workspace
     const board = await this.boardRepository.findOne({
       where: {
         id: boardId,
         workspace: {
           members: {
-            userId: userId, // Kiểm tra User hiện tại có nằm trong Workspace chứa Board này không
+            userId: userId,
           },
         },
       },
@@ -199,15 +199,6 @@ export class BoardService {
           },
         },
       },
-      // Thêm sắp xếp thứ tự cho Column và Task
-      order: {
-        columns: {
-          position: 'ASC',
-          tasks: {
-            position: 'ASC',
-          },
-        },
-      },
     });
 
     if (!board) {
@@ -216,10 +207,16 @@ export class BoardService {
       );
     }
 
-    // --- DUYỆT QUA CÁC COLUMN VÀ TASK ĐỂ GÁN PROGRESS DỰA TRÊN startDate & dueDate ---
+    // --- SẮP XẾP CÁC COLUMN VÀ TASK THEO POSITION TĂNG DẦN (ASC) ---
     if (board.columns) {
+      // Sắp xếp danh sách Column theo position tăng dần
+      board.columns.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
       board.columns.forEach((column) => {
         if (column.tasks) {
+          // Sắp xếp danh sách Task trong từng Column theo position tăng dần
+          column.tasks.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
           column.tasks.forEach((task) => {
             // Gán tiến độ (%) dựa vào startDate và dueDate
             (task as any).progress = calculateDynamicProgress(
