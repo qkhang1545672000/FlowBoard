@@ -31,12 +31,37 @@ export class SubTaskService {
 
     const now = new Date().getTime();
 
-    // Duyệt qua từng subtask để tính toán thời gian còn lại
+    // Duyệt qua từng subtask để tính toán thời gian
     return subTasks.map((subTask) => {
       let timeLeftText = '';
       let isOverdue = false;
 
-      if (subTask.dueDate) {
+      // 🟢 1. Kiểm tra nếu có thời gian bắt đầu và lớn hơn hiện tại (Chưa đến giờ bắt đầu)
+      if (subTask.startDate) {
+        const startTime = new Date(subTask.startDate).getTime();
+        const startDiff = startTime - now;
+
+        if (startDiff > 0) {
+          const days = Math.floor(startDiff / (1000 * 60 * 60 * 24));
+          const hours = Math.floor(
+            (startDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
+          );
+          const minutes = Math.floor(
+            (startDiff % (1000 * 60 * 60)) / (1000 * 60),
+          );
+
+          if (days > 0) {
+            timeLeftText = `Còn ${days} ngày ${hours} giờ nữa bắt đầu`;
+          } else if (hours > 0) {
+            timeLeftText = `Còn ${hours} giờ ${minutes} phút nữa bắt đầu`;
+          } else {
+            timeLeftText = `Còn ${minutes} phút nữa bắt đầu`;
+          }
+        }
+      }
+
+      // 🟢 2. Nếu đã đến hoặc qua thời gian bắt đầu, tiến hành tính thời gian còn lại đến hạn chót (dueDate)
+      if (!timeLeftText && subTask.dueDate) {
         const dueTime = new Date(subTask.dueDate).getTime();
         const diff = dueTime - now;
 
@@ -62,7 +87,7 @@ export class SubTaskService {
 
       return {
         ...subTask,
-        timeLeft: timeLeftText, // Chuỗi thời gian còn lại (Ví dụ: "Còn 2 ngày 5 giờ" hoặc "Đã quá hạn")
+        timeLeft: timeLeftText, // Chuỗi hiển thị thời gian linh hoạt (Chờ bắt đầu -> Đếm ngược deadline -> Quá hạn)
         isOverdue, // Cờ đánh dấu quá hạn (true/false)
       };
     });
