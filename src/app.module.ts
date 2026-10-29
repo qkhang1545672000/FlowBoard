@@ -21,6 +21,7 @@ import { ColumnModule } from './app/column/column.module';
 import { TaskModule } from './app/task/task.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ActivityLogModule } from './app/activity-log/activity-log.module';
+import { SubTaskModule } from './app/sub-task/sub-task.module';
 
 const envFile =
   process.env.NODE_ENV === 'production'
@@ -51,6 +52,7 @@ const envFile =
     ChatModule,
     ColumnModule,
     TaskModule,
+    SubTaskModule,
   ],
   providers: [
     {

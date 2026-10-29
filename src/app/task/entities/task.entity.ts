@@ -14,6 +14,7 @@ import { TaskPriority } from 'src/shared/types/task-priority.enum';
 import { ColumnEntity } from '../../column/entities/column.entity';
 import { Label } from 'src/app/task/entities/label.entity';
 import { TaskMember } from './task-member.entity';
+import { SubTask } from 'src/app/sub-task/entities/sub-task.entity';
 
 @Entity('tasks')
 @Index(['columnId', 'position'])
@@ -61,4 +62,7 @@ export class Task extends BaseUuidEntity {
   // Quan hệ 1-N với danh sách tất cả thành viên (bao gồm LEADER & MEMBER) trong Task
   @OneToMany(() => TaskMember, (member) => member.task)
   members: TaskMember[];
+
+  @OneToMany(() => SubTask, (subTask) => subTask.task)
+  subTasks: SubTask[];
 }
