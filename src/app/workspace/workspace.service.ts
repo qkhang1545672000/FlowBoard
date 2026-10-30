@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   Injectable,
   ConflictException,
@@ -30,6 +31,7 @@ import { TaskMember } from '../task/entities/task-member.entity';
 import { Task } from '../task/entities/task.entity';
 import { BoardMember } from '../board/entities/board-member.entity';
 import { ColumnEntity } from '../column/entities/column.entity';
+import { PinoLogger } from 'nestjs-pino';
 interface BoardRaw {
   id: string;
   title: string;
@@ -55,6 +57,7 @@ export class WorkspaceService {
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
     private readonly sessionAuthService: SessionAuthService,
+    private readonly logger: PinoLogger,
   ) {}
 
   // ==========================================
@@ -604,6 +607,7 @@ export class WorkspaceService {
     await this.invitationRepository.save(invitation);
 
     // 4. Gửi email
+    // 4. Gửi email bất đồng bộ (Không dùng await để không bắt client phải chờ)
     const clientUrl = this.configService.get<string>(
       'CLIENT_URL',
       'http://localhost:3000',
@@ -611,12 +615,22 @@ export class WorkspaceService {
     const acceptUrl = `${clientUrl}/invitations/accept?token=${token}`;
     const inviterName = inviter.name || inviter.email;
 
-    await this.emailService.sendWorkspaceInvitationEmail(
-      dto.email,
-      inviterName,
-      workspace.name,
-      acceptUrl,
-    );
+    // Gọi không cần await để request trả về ngay lập tức, tránh bị timeout 30s
+    void this.emailService
+      .sendWorkspaceInvitationEmail(
+        dto.email,
+        inviterName,
+        workspace.name,
+        acceptUrl,
+      )
+      .catch((err) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+        this.logger.error({
+          msg: 'Background email send failed',
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          error: err.message,
+        });
+      });
 
     return { success: true, message: 'Đã gửi lời mời thành công qua Email' };
   }
