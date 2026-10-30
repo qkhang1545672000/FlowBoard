@@ -187,6 +187,10 @@ export class BoardService {
         },
       },
       relations: {
+        // PHẢI THÊM WORKSPACE VÀO ĐÂY ĐỂ TYPEORM JOIN ĐÚNG ĐIỀU KIỆN WHERE BÊN TRÊN
+        workspace: {
+          members: true,
+        },
         members: {
           user: true,
         },

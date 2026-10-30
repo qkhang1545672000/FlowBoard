@@ -51,7 +51,6 @@ export class BoardController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateBoardDto: UpdateBoardDto,
   ) {
-    console.log('uuuuuuuuuuuuuuuuuuuu', updateBoardDto);
     return this.boardService.update(id, updateBoardDto);
   }
   @Get(':boardId/members')
