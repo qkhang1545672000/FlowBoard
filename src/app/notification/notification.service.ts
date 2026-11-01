@@ -1,15 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  Notification,
-  NotificationScope,
-  NotificationType,
-} from './entities/notification.entity';
+import { Notification } from './entities/notification.entity';
 import { WorkspaceMember } from 'src/app/workspace/entities/workspace-member.entity';
 import { BoardMember } from 'src/app/board/entities/board-member.entity'; // Đường dẫn tới BoardMember entity của bạn
 import { Task } from 'src/app/task/entities/task.entity';
 import { TaskMember } from '../task/entities/task-member.entity';
+import {
+  NotificationScope,
+  NotificationType,
+} from 'src/shared/types/notification.enum';
 
 @Injectable()
 export class NotificationService {
@@ -32,6 +32,10 @@ export class NotificationService {
     const notifications = await this.notificationRepository.find({
       where: { recipientId: userId },
       order: { createdAt: 'DESC' },
+      relations: {
+        workspace: true,
+        sender: true,
+      },
       take: 20, // Giới hạn 20 thông báo gần nhất
     });
 
@@ -69,6 +73,7 @@ export class NotificationService {
     workspaceId?: string;
     boardId?: string;
     taskId?: string;
+    title?: string;
     specificUserId?: string; // Dùng cho trường hợp DIRECT (VD: mời riêng 1 người)
     metadata?: Record<string, any>;
   }) {
@@ -145,6 +150,7 @@ export class NotificationService {
         userId: true,
       },
     });
+
     return members.map((m) => m.userId).filter((id) => id !== excludeSenderId);
   }
 
@@ -196,6 +202,7 @@ export class NotificationService {
 
   // --- Mapper giúp cập nhật tên động (Workspace, Board, Task) realtime ---
   private mapNotificationToResponse(notif: Notification) {
+    console.log('sdfsdafcccccccccc', notif);
     let dynamicTitle = '';
     const senderName = notif.sender?.name || 'Ai đó';
     const wsName = notif.workspace?.name || 'Workspace';
@@ -255,6 +262,7 @@ export class NotificationService {
       workspaceId: notif.workspaceId,
       boardId: notif.boardId,
       taskId: notif.taskId,
+      metadata: notif.metadata,
     };
   }
 

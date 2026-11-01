@@ -4,25 +4,12 @@ import { User } from 'src/app/user/entities/user.entity'; // Đường dẫn đ�
 import { Workspace } from 'src/app/workspace/entities/workspace.entity';
 import { Board } from 'src/app/board/entities/board.entity';
 import { Task } from 'src/app/task/entities/task.entity'; // Đường dẫn đến Task entity
+import {
+  NotificationScope,
+  NotificationType,
+} from 'src/shared/types/notification.enum';
 
 // 1. Phân loại nội dung/sự kiện thông báo
-export enum NotificationType {
-  WORKSPACE_INVITE = 'WORKSPACE_INVITE', // Lời mời tham gia Workspace (có nút Chấp nhận/Từ chối)
-  WORKSPACE_ACTIVITY = 'WORKSPACE_ACTIVITY', // Hoạt động chung trong Workspace
-  BOARD_CREATE = 'BOARD_CREATE', // Tạo Board mới trong Workspace
-  TASK_ASSIGN = 'TASK_ASSIGN', // Được giao Task mới
-  TASK_DUE_SOON = 'TASK_DUE_SOON', // Task sắp đến hạn
-  CHAT_MENTION = 'CHAT_MENTION', // Được nhắc đến trong thảo luận/chat
-  SYSTEM = 'SYSTEM', // Thông báo hệ thống
-}
-
-// 2. Phân loại đối tượng/phạm vi nhận thông báo
-export enum NotificationScope {
-  WORKSPACE = 'WORKSPACE', // Gửi cho tất cả thành viên thuộc Workspace này
-  BOARD = 'BOARD', // Gửi cho tất cả thành viên thuộc Board này
-  TASK = 'TASK', // Gửi cho người tạo & những người được phân công trong Task này
-  DIRECT = 'DIRECT', // Gửi trực tiếp 1-1 cho 1 User cụ thể (ví dụ: Lời mời, Tag tên)
-}
 
 @Entity('notifications')
 export class Notification extends BaseUuidEntity {
@@ -32,7 +19,7 @@ export class Notification extends BaseUuidEntity {
   recipientId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'recipientId' })
+  @JoinColumn({ name: 'recipient_id' })
   recipient: User;
 
   // Người thực hiện hành động (VD: Alex Rivera) - Null nếu là thông báo hệ thống
@@ -40,7 +27,7 @@ export class Notification extends BaseUuidEntity {
   senderId: string | null;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
-  @JoinColumn({ name: 'senderId' })
+  @JoinColumn({ name: 'sender_id' })
   sender: User | null;
 
   // Loại hành động thông báo
@@ -72,21 +59,21 @@ export class Notification extends BaseUuidEntity {
     nullable: true,
     eager: true,
   })
-  @JoinColumn({ name: 'workspaceId' })
+  @JoinColumn({ name: 'workspace_id' })
   workspace: Workspace | null;
 
   @Column({ type: 'uuid', nullable: true })
   boardId: string | null;
 
   @ManyToOne(() => Board, { onDelete: 'CASCADE', nullable: true, eager: true })
-  @JoinColumn({ name: 'boardId' })
+  @JoinColumn({ name: 'board_id' })
   board: Board | null;
 
   @Column({ type: 'uuid', nullable: true })
   taskId: string | null;
 
   @ManyToOne(() => Task, { onDelete: 'CASCADE', nullable: true, eager: true })
-  @JoinColumn({ name: 'taskId' })
+  @JoinColumn({ name: 'task_id' })
   task: Task | null;
 
   // -------------------------------------------------------------

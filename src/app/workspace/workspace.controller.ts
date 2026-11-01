@@ -171,7 +171,12 @@ export class WorkspaceController {
         'Bạn không có quyền thực hiện thao tác này!',
       );
     }
-    return this.workspaceService.updateMemberRole(workspaceId, userId, role);
+    return this.workspaceService.updateMemberRole(
+      workspaceId,
+      userId,
+      role,
+      user,
+    );
   }
 
   @Delete(':id/members/:userId')

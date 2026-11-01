@@ -32,6 +32,11 @@ import { Task } from '../task/entities/task.entity';
 import { BoardMember } from '../board/entities/board-member.entity';
 import { ColumnEntity } from '../column/entities/column.entity';
 import { PinoLogger } from 'nestjs-pino';
+import {
+  NotificationScope,
+  NotificationType,
+} from 'src/shared/types/notification.enum';
+import { NotificationService } from '../notification/notification.service';
 interface BoardRaw {
   id: string;
   title: string;
@@ -58,6 +63,7 @@ export class WorkspaceService {
     private readonly dataSource: DataSource,
     private readonly sessionAuthService: SessionAuthService,
     private readonly logger: PinoLogger,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // ==========================================
@@ -389,7 +395,16 @@ export class WorkspaceService {
     workspaceId: string,
     userId: string,
     role: WorkspaceRole,
+    currentUser: User, // Truyền thêm thông tin người thực hiện thao tác (nếu có)
   ): Promise<WorkspaceMember> {
+    const workspace = await this.workspaceRepository.findOne({
+      where: { id: workspaceId },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Workspace không tồn tại');
+    }
+
     // Sử dụng transaction của TypeORM để đảm bảo tính an toàn dữ liệu
     return await this.memberRepository.manager.transaction(
       async (transactionalEntityManager) => {
@@ -402,39 +417,80 @@ export class WorkspaceService {
         });
 
         if (!member) {
-          apiNotFound('errors.workspace.memberNotFound');
+          throw new NotFoundException(
+            'Không tìm thấy thành viên trong workspace',
+          );
         }
 
-        // 🛡️ BẢO VỆ OWNER: Không cho phép hạ cấp hoặc đổi role của Owner qua hàm này
-        // (Tránh việc Owner bị mất quyền tối cao khi được gán nhãn Leader)
+        // 🛡️ BẢO VỆ OWNER
         if (
           member.role === WorkspaceRole.OWNER &&
           role !== WorkspaceRole.OWNER
         ) {
-          // Tùy thuộc vào cách dự án xử lý lỗi (ví dụ: apiBadRequest hoặc throw exception)
-          throw new Error('errors.workspace.cannotChangeOwnerRole');
+          throw new BadRequestException('Không thể thay đổi quyền của Owner');
         }
 
-        // 2. Nếu role mới được gán là LEADER_WORKSPACE, cần xử lý leader cũ trong workspace
+        const oldRole = member.role;
+
+        // 2. Nếu role mới được gán là LEADER_WORKSPACE, cần xử lý leader cũ
+        let previousLeader: WorkspaceMember | null = null;
         if (role === WorkspaceRole.LEADER_WORKSPACE) {
-          const currentLeader = await memberRepository.findOne({
+          previousLeader = await memberRepository.findOne({
             where: { workspaceId, role: WorkspaceRole.LEADER_WORKSPACE },
           });
 
-          // Nếu đã có leader cũ, khác user hiện tại và đảm bảo không đụng đến Owner
           if (
-            currentLeader &&
-            currentLeader.userId !== userId &&
-            currentLeader.role !== WorkspaceRole.OWNER
+            previousLeader &&
+            previousLeader.userId !== userId &&
+            previousLeader.role !== WorkspaceRole.OWNER
           ) {
-            currentLeader.role = WorkspaceRole.MEMBER_WORKSPACE; // Hạ cấp leader cũ thành member thường
-            await memberRepository.save(currentLeader);
+            previousLeader.role = WorkspaceRole.MEMBER_WORKSPACE; // Hạ cấp leader cũ
+            await memberRepository.save(previousLeader);
           }
         }
 
         // 3. Cập nhật role mới cho thành viên hiện tại
         member.role = role;
-        return await memberRepository.save(member);
+        const updatedMember = await memberRepository.save(member);
+
+        // 4. 🔥 BẮN THÔNG BÁO CHO CÁC BÊN LIÊN QUAN
+
+        // Trường hợp A: Người được thăng làm Leader mới
+        if (
+          oldRole !== WorkspaceRole.LEADER_WORKSPACE &&
+          role === WorkspaceRole.LEADER_WORKSPACE
+        ) {
+          await this.notificationService.createNotificationForScope({
+            senderId: currentUser?.id || null,
+            type: NotificationType.WORKSPACE_ACTIVITY,
+            scope: NotificationScope.DIRECT,
+            specificUserId: userId, // Gửi cho người được làm leader
+            workspaceId: workspaceId,
+            title: `Bạn đã được bổ nhiệm làm Trưởng nhóm (Leader) tại Workspace '${workspace.name}'`,
+            metadata: {
+              workspaceSlug: workspace.slug,
+              action: 'NEW_LEADER',
+            },
+          });
+        }
+
+        // Trường hợp B: Người bị hạ cấp xuống Member (do có Leader mới thay thế)
+        if (previousLeader && previousLeader.userId !== userId) {
+          await this.notificationService.createNotificationForScope({
+            senderId: currentUser?.id || null,
+            type: NotificationType.WORKSPACE_ACTIVITY,
+            scope: NotificationScope.DIRECT,
+            specificUserId: previousLeader.userId, // Gửi cho người bị hạ cấp
+            workspaceId: workspaceId,
+            title: `Bạn đã được chuyển thành Thành viên thường tại Workspace '${workspace.name}'`,
+            metadata: {
+              workspaceSlug: workspace.slug,
+              action: 'DEMOTED_MEMBER',
+            },
+          });
+        }
+
+        return updatedMember;
       },
     );
   }
@@ -568,14 +624,16 @@ export class WorkspaceService {
   ) {
     const workspace = await this.getWorkspaceById(workspaceId);
 
-    // 1. Kiểm tra nếu email đã là thành viên
+    // 1. Kiểm tra nếu email đã là thành viên chính thức của Workspace
     const targetUser = await this.userRepository.findOne({
       where: { email: dto.email },
     });
+
     if (targetUser) {
       const existingMember = await this.memberRepository.findOne({
         where: { workspaceId, userId: targetUser.id },
       });
+
       if (existingMember) {
         throw new ConflictException(
           'Người dùng đã là thành viên của Workspace này',
@@ -583,13 +641,42 @@ export class WorkspaceService {
       }
     }
 
-    // 2. Vô hiệu hóa lời mời cũ đang chờ (nếu có)
-    await this.invitationRepository.update(
-      { workspaceId, email: dto.email, status: InvitationStatus.PENDING },
-      { status: InvitationStatus.EXPIRED },
-    );
+    // 2. 🛑 KIỂM TRA LỜI MỜI ĐANG CHỜ (PENDING) TRƯỚC ĐÓ
+    // Nếu email này đã nhận được lời mời vào workspace này và vẫn đang PENDING thì không gửi lại nữa
+    const existingPendingInvitation = await this.invitationRepository.findOne({
+      where: {
+        workspaceId,
+        email: dto.email,
+        status: InvitationStatus.PENDING,
+      },
+    });
 
-    // 3. Tạo Token và hết hạn sau 7 ngày
+    if (existingPendingInvitation) {
+      // 🔥 Tạo thông báo cho chính người gửi (inviter) biết là đã gửi lời mời này rồi
+      await this.notificationService.createNotificationForScope({
+        senderId: inviter.id,
+        type: NotificationType.SYSTEM, // Hoặc thông báo hệ thống
+        scope: NotificationScope.DIRECT,
+        specificUserId: inviter.id, // Gửi cho chính người đang thao tác
+        workspaceId: workspaceId,
+        title: `Bạn đã gửi lời mời tham gia Workspace '${workspace.name}' tới email ${dto.email} trước đó rồi.`,
+        metadata: {
+          customTitle: 'Bạn đã gửi lời mời kết bạn trước đó',
+          targetEmail: dto.email,
+        },
+      });
+
+      // Trả về lỗi/thông báo cho client (hoặc quăng BadRequestException tùy ý bạn muốn hiện toast lỗi thế nào)
+      throw new BadRequestException(
+        `Bạn đã gửi lời mời tới ${dto.email} trước đó rồi và lời mời vẫn đang chờ phản hồi.`,
+      );
+    }
+
+    // 3. Vô hiệu hóa lời mời cũ đang chờ (Đoạn này giữ nguyên nếu muốn logic cũ, nhưng vì ở trên đã chặn PENDING rồi thì có thể tùy chọn giữ hay bỏ.
+    // Tuy nhiên nếu bạn muốn hệ thống tự động ghi đè/hủy cũ tạo mới thì bỏ chặn ở bước 2 đi.
+    // Còn nếu muốn "nếu đã gửi rồi thì từ chối gửi thêm và báo đã gửi" thì dùng logic ở bước 2 này).
+
+    // 4. Tạo Token và hết hạn sau 7 ngày
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
@@ -606,8 +693,28 @@ export class WorkspaceService {
 
     await this.invitationRepository.save(invitation);
 
-    // 4. Gửi email
-    // 4. Gửi email bất đồng bộ (Không dùng await để không bắt client phải chờ)
+    // 5. Nếu người nhận ĐÃ CÓ TÀI KHOẢN trong hệ thống -> Tạo luôn thông báo In-app Realtime cho người nhận
+    if (targetUser) {
+      await this.notificationService.createNotificationForScope({
+        senderId: inviter.id,
+        type: NotificationType.WORKSPACE_INVITE,
+        scope: NotificationScope.DIRECT,
+        specificUserId: targetUser.id,
+        workspaceId: workspaceId,
+        title: `${inviter.name || inviter.email} đã mời bạn tham gia Workspace '${workspace.name}'`,
+        metadata: {
+          token,
+          inviterName: inviter.name || inviter.email,
+          workspaceName: workspace.name,
+        },
+      });
+      return {
+        success: true,
+        message: 'Đã gửi lời mời hệ thống thành công',
+      };
+    }
+
+    // 6. Gửi email bất đồng bộ (Không dùng await để không bắt client phải chờ)
     const clientUrl = this.configService.get<string>(
       'CLIENT_URL',
       'http://localhost:3000',
@@ -615,7 +722,6 @@ export class WorkspaceService {
     const acceptUrl = `${clientUrl}/invitations/accept?token=${token}`;
     const inviterName = inviter.name || inviter.email;
 
-    // Gọi không cần await để request trả về ngay lập tức, tránh bị timeout 30s
     void this.emailService
       .sendWorkspaceInvitationEmail(
         dto.email,
@@ -624,7 +730,6 @@ export class WorkspaceService {
         acceptUrl,
       )
       .catch((err) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
         this.logger.error({
           msg: 'Background email send failed',
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -632,7 +737,10 @@ export class WorkspaceService {
         });
       });
 
-    return { success: true, message: 'Đã gửi lời mời thành công qua Email' };
+    return {
+      success: true,
+      message: 'Đã gửi lời mời thành công qua Email và Hệ thống',
+    };
   }
 
   // Chấp nhận lời mời từ link/token trong email
@@ -643,17 +751,21 @@ export class WorkspaceService {
     const invitation = await this.invitationRepository.findOne({
       where: { token },
     });
-    const workspaceDetail = await this.workspaceRepository.findOne({
-      where: { id: invitation.workspaceId },
-    });
 
     if (!invitation) {
       throw new NotFoundException('Lời mời không tồn tại hoặc đã bị xóa');
     }
 
+    const workspaceDetail = await this.workspaceRepository.findOne({
+      where: { id: invitation.workspaceId },
+    });
+
+    if (!workspaceDetail) {
+      throw new NotFoundException('Workspace không tồn tại');
+    }
+
     // 2. Kiểm tra trạng thái lời mời
     if (invitation.status === InvitationStatus.ACCEPTED) {
-      // Nếu đã chấp nhận rồi, trả về luôn workspaceId để Frontend chuyển hướng, không insert lại
       return {
         success: true,
         message: 'Bạn đã gia nhập Workspace này trước đó rồi',
@@ -680,7 +792,6 @@ export class WorkspaceService {
     });
 
     if (existingMember) {
-      // Cập nhật trạng thái lời mời sang ACCEPTED nếu chưa cập nhật
       invitation.status = InvitationStatus.ACCEPTED;
       await this.invitationRepository.save(invitation);
 
@@ -703,6 +814,22 @@ export class WorkspaceService {
     // 5. Đánh dấu lời mời đã được chấp nhận
     invitation.status = InvitationStatus.ACCEPTED;
     await this.invitationRepository.save(invitation);
+
+    // 6. 🔥 BẮN THÔNG BÁO CHO NGƯỜI GỬI (INVITER)
+    if (invitation.inviterId && invitation.inviterId !== user.id) {
+      const userName = user.name || user.email;
+      await this.notificationService.createNotificationForScope({
+        senderId: user.id,
+        type: NotificationType.WORKSPACE_ACTIVITY, // Hoặc SYSTEM tùy thuộc vào enum của bạn
+        scope: NotificationScope.DIRECT,
+        specificUserId: invitation.inviterId, // Gửi trực tiếp cho người mời
+        workspaceId: invitation.workspaceId,
+        metadata: {
+          customTitle: `${userName} đã chấp nhận lời mời tham gia Workspace '${workspaceDetail.name}'`,
+          acceptedUserId: user.id,
+        },
+      });
+    }
 
     return {
       success: true,

@@ -11,6 +11,7 @@ import { WorkspaceInvitation } from './entities/workspace-invitation.entity';
 
 import { User } from '../user/entities/user.entity';
 import { Board } from '../board/entities/board.entity';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
@@ -23,7 +24,9 @@ import { Board } from '../board/entities/board.entity';
     ]),
     AuthModule,
     EmailModule,
+    NotificationModule,
   ],
+
   controllers: [WorkspaceController],
   providers: [WorkspaceService],
   exports: [WorkspaceService],
