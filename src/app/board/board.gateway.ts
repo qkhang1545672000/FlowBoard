@@ -133,6 +133,7 @@ export class BoardGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const roomName = `board:${payload.boardId}`;
     client.to(roomName).emit('column-created', {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       newColumn: payload.newColumn,
     });
   }

@@ -22,6 +22,7 @@ import { UpdateColumnDto } from '../board/dto/update-column.dto';
 import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
 import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
+import { MoveColumnDto } from './dto/move-column.dto';
 
 @UseGuards(SessionAuthGuard)
 @ApiTags('Columns')
@@ -69,5 +70,15 @@ export class ColumnController {
   @ApiOperation({ summary: 'Khôi phục Column đã xóa' })
   restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.columnService.restore(id);
+  }
+
+  @Patch(':id/move')
+  @ApiOperation({ summary: 'Di chuyển vị trí Column (Kéo thả)' })
+  moveColumn(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() moveColumnDto: MoveColumnDto,
+  ) {
+    return this.columnService.moveColumn(id, moveColumnDto, user);
   }
 }

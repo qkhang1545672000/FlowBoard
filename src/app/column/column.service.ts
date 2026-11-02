@@ -11,6 +11,8 @@ import { UpdateColumnDto } from '../board/dto/update-column.dto';
 
 import { BoardService } from '../board/board.service';
 import { WorkspaceService } from '../workspace/workspace.service';
+import { User } from '../user/entities/user.entity';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 @Injectable()
 export class ColumnService {
@@ -20,6 +22,7 @@ export class ColumnService {
 
     private readonly boardService: BoardService,
     private readonly workspaceService: WorkspaceService,
+    private readonly activityLogService: ActivityLogService,
   ) {}
 
   /**
@@ -181,8 +184,53 @@ export class ColumnService {
     });
   }
 
-  async moveColumn(columnId: string, position: number) {
+  async moveColumn(
+    columnId: string,
+    moveColumnDto: { position: number },
+    user?: User,
+  ) {
+    const { position } = moveColumnDto;
+
+    // 1. Kiểm tra Column có tồn tại không
+    const column = await this.columnRepository.findOne({
+      where: { id: columnId },
+    });
+    if (!column) {
+      throw new NotFoundException(`Column với ID "${columnId}" không tồn tại.`);
+    }
+
+    // 2. Cập nhật position mới vào DB cho cột được kéo
     await this.columnRepository.update(columnId, { position });
-    return { success: true };
+
+    // 3. Chuẩn hóa lại thứ tự position chuẩn cho toàn bộ các cột trong board đó
+    // (tránh việc position bị trùng lặp hoặc số quá lẻ sau nhiều lần kéo thả)
+    const columnsInBoard = await this.columnRepository.find({
+      where: { boardId: column.boardId },
+      order: { position: 'ASC' },
+    });
+
+    for (let i = 0; i < columnsInBoard.length; i++) {
+      await this.columnRepository.update(columnsInBoard[i].id, {
+        position: (i + 1) * 100.0,
+      });
+    }
+
+    // 4. 📝 GHI LOG HOẠT ĐỘNG (Activity Log) nếu có truyền user
+    if (user) {
+      await this.activityLogService.create(user.id, {
+        boardId: column.boardId,
+        action: 'MOVED_COLUMN', // Hoặc tên action tương ứng trong hệ thống log của bạn
+        entityType: 'COLUMN',
+        entityId: column.id,
+        details: {
+          columnTitle: column.title,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Di chuyển cột thành công',
+    };
   }
 }

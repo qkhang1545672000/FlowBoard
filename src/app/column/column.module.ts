@@ -8,12 +8,14 @@ import { ColumnService } from './column.service';
 
 import { BoardModule } from '../board/board.module';
 import { WorkspaceModule } from '../workspace/workspace.module';
+import { ActivityLogModule } from '../activity-log/activity-log.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ColumnEntity]),
     BoardModule,
     WorkspaceModule,
+    ActivityLogModule,
   ],
   controllers: [ColumnController],
   providers: [ColumnService],
