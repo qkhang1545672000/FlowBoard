@@ -202,7 +202,6 @@ export class NotificationService {
 
   // --- Mapper giúp cập nhật tên động (Workspace, Board, Task) realtime ---
   private mapNotificationToResponse(notif: Notification) {
-    console.log('sdfsdafcccccccccc', notif);
     let dynamicTitle = '';
     const senderName = notif.sender?.name || 'Ai đó';
     const wsName = notif.workspace?.name || 'Workspace';
