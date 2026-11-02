@@ -48,13 +48,14 @@ export class WorkspaceController {
       name: ws.name,
       slug: ws.slug,
       updatedAt: ws.updatedAt,
-      boardsCount: ws.boards ? ws.boards.length : 0, // Đếm số lượng board trong workspace
+      boardsCount: ws.boards ? ws.boards.length : 0,
       members: ws.members
         ? ws.members.map((m) => ({
-            id: m.userId,
-            role: m.role,
+            // Đảm bảo lấy đúng ID của User để Frontend so sánh với currentUserId?.id
+            id: m.user?.id || m.userId,
+            role: m.role, // Lấy trực tiếp role từ WorkspaceMember
             name: m.user?.name || 'Member',
-            image: m.user?.image || m.user?.image || null,
+            image: m.user?.image || null,
             joinedAt: m.createdAt,
           }))
         : [],
