@@ -1,10 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+
 import { InjectRepository } from '@nestjs/typeorm';
 import { PinoLogger } from 'nestjs-pino';
 import { Verification } from 'src/app/auth/entities/verification.entity';
 import { UserService } from 'src/app/user/user.service';
 import { apiBadRequest } from 'src/shared/helpers/api-i18n';
 import { Repository } from 'typeorm';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { UpdateUserDto } from './dto/UpdateUser.dto';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +16,7 @@ export class AuthService {
     private readonly verificationRepository: Repository<Verification>,
     private readonly logger: PinoLogger,
     private readonly userService: UserService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {
     this.logger.setContext(AuthService.name);
   }
@@ -52,5 +56,22 @@ export class AuthService {
       message: 'Xác thực email thành công!',
       user: null,
     };
+  }
+
+  async updateProfile(
+    userId: string,
+    updateData: UpdateUserDto & { image?: string },
+  ) {
+    const user = await this.userService.getUser(userId);
+
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy người dùng!');
+    }
+
+    // Merge dữ liệu cũ với dữ liệu mới gửi lên
+    Object.assign(user, updateData);
+
+    // Lưu vào database
+    return await this.userService.saveUser(user);
   }
 }

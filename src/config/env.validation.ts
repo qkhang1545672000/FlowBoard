@@ -26,6 +26,9 @@ export const envSchema = z.object({
   SMTP_PASS: z.string().trim().min(1),
   SMTP_FROM: z.string().trim().min(1),
   INTERNAL_API_SECRET: z.string().trim().min(1),
+  CLOUD_NAME: z.string().trim().min(1),
+  API_KEY: z.string().trim().min(1),
+  API_SECRET: z.string().trim().min(1),
   BETTER_AUTH_SECRET: z
     .string()
     .min(1)

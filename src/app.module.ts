@@ -23,6 +23,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ActivityLogModule } from './app/activity-log/activity-log.module';
 import { SubTaskModule } from './app/sub-task/sub-task.module';
 import { NotificationModule } from './app/notification/notification.module';
+import { CloudinaryModule } from './app/cloudinary/cloudinary.module';
 
 const envFile =
   process.env.NODE_ENV === 'production'
@@ -55,6 +56,7 @@ const envFile =
     TaskModule,
     SubTaskModule,
     NotificationModule,
+    CloudinaryModule,
   ],
   providers: [
     {

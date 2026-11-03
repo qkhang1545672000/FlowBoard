@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/app/user/entities/user.entity';
 import { apiNotFound } from 'src/shared/helpers/api-i18n';
@@ -24,5 +24,8 @@ export class UserService {
 
   getUser(id: string) {
     return this.userRepository.findOne({ where: { id } });
+  }
+  saveUser(user: User) {
+    return this.userRepository.save(user);
   }
 }

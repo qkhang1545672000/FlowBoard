@@ -8,12 +8,14 @@ import { AuthService } from './auth.service';
 import { UserModule } from '../user/user.module';
 import { SessionAuthService } from './session-auth/session-auth.service';
 import { AuthGateway } from './auth.gateway';
+import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
 @Global()
 @Module({
   imports: [
     TypeOrmModule.forFeature([Account, Session, Verification]),
     UserModule,
+    CloudinaryModule,
   ],
   providers: [SessionAuthService, AuthService, AuthGateway],
   exports: [SessionAuthService],

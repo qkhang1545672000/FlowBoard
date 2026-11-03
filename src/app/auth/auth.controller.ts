@@ -1,13 +1,21 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Query,
   Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConsumes,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -18,7 +26,12 @@ import { SessionAuthService } from 'src/app/auth/session-auth/session-auth.servi
 import { UserResponseDto } from 'src/app/user/dto/user-response.dto';
 import { User } from 'src/app/user/entities/user.entity';
 import { UserService } from 'src/app/user/user.service';
+import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
+import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
 import { ResEx } from 'src/swagger/response-examples';
+import { UpdateUserDto } from './dto/UpdateUser.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @ApiTags('Xác thực (Auth)')
 @Controller('auth')
@@ -27,6 +40,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly userService: UserService,
     private readonly sessionAuth: SessionAuthService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   private mapUserResponse(user: User) {
@@ -153,5 +167,31 @@ export class AuthController {
       authenticated: true,
       user: session.user,
     };
+  }
+  @UseGuards(SessionAuthGuard)
+  @Patch()
+  @ApiOperation({ summary: 'Cập nhật thông tin cá nhân và ảnh đại diện' })
+  @ApiConsumes('multipart/form-data') // Khai báo để Swagger hiểu form-data chứa cả file và text
+  @UseInterceptors(FileInterceptor('file')) // 'file' là tên field gửi ảnh lên từ FormData
+  async updateProfile(
+    @CurrentUser() currentUser: User,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    let imageUrl = undefined;
+
+    // Nếu người dùng có chọn file ảnh mới để tải lên
+    if (file) {
+      const uploadResult = await this.cloudinaryService.uploadImage(file);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      imageUrl = (uploadResult as any).secure_url; // Lấy URL an toàn từ Cloudinary
+    }
+
+    // Gọi service xử lý update vào cơ sở dữ liệu (kết hợp cả dữ liệu chữ và ảnh mới nếu có)
+    return this.authService.updateProfile(currentUser.id, {
+      ...updateUserDto,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      ...(imageUrl && { image: imageUrl }), // Nếu có ảnh mới thì cập nhật thêm trường image
+    });
   }
 }
