@@ -62,14 +62,20 @@ export class AuthService {
     userId: string,
     updateData: UpdateUserDto & { image?: string },
   ) {
+    console.log('uuuduuucccccc', updateData);
     const user = await this.userService.getUser(userId);
 
     if (!user) {
       throw new NotFoundException('Không tìm thấy người dùng!');
     }
 
-    // Merge dữ liệu cũ với dữ liệu mới gửi lên
-    Object.assign(user, updateData);
+    // Lọc bỏ các trường có giá trị undefined để tránh ghi đè dữ liệu cũ
+    const filteredUpdateData = Object.fromEntries(
+      Object.entries(updateData).filter(([_, value]) => value !== undefined),
+    );
+
+    // Merge dữ liệu cũ chỉ với các trường thực sự được gửi lên
+    Object.assign(user, filteredUpdateData);
 
     // Lưu vào database
     return await this.userService.saveUser(user);
