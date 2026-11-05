@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { WorkspaceService } from '../workspace/workspace.service';
 
 interface JoinChatRoomPayload {
   scope: 'WORKSPACE' | 'BOARD' | 'TASK';
@@ -31,10 +32,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly workspaceService: WorkspaceService,
+  ) {}
 
   handleConnection(client: Socket) {
-    console.log(`[ChatGateway] Client đã kết nối: ${client.id}`);
+    const userId = client.handshake.query.userId as string;
+    console.log(
+      `[ChatGateway] Client kết nối với ID: ${client.id}, Query userId:`,
+      userId,
+    );
+    if (userId) {
+      client.join(`user_${userId}`);
+      console.log(`✅ Đã đưa user vào phòng: user_${userId}`);
+    } else {
+      console.log(`❌ KHÔNG TÌM THẤY userId trong query của client!`);
+    }
   }
 
   handleDisconnect(client: Socket) {
@@ -95,5 +109,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // 3. Broadcast tin nhắn mới tới TẤT CẢ mọi người trong Room (bao gồm cả sender để sync)
     this.server.to(roomName).emit('new-message', savedMessage);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
+    if (payload.dto.scope === 'WORKSPACE') {
+      // Lấy danh sách tất cả các thành viên thuộc workspace này từ Database (qua ChatService)
+      // Ví dụ: const memberIds = await this.chatService.getWorkspaceMemberIds(targetId);
+
+      // Tạm thời nếu bạn chưa viết hàm lấy memberIds, bạn có thể truyền qua payload hoặc query DB:
+      const memberIds: string[] =
+        await this.workspaceService.getWorkspaceMemberIds(targetId);
+      console.log('mmmmmmmmmmmmmmsadc', memberIds);
+      // Gửi thông báo đến "kênh chung cá nhân" (user_{id}) của TỪNG THÀNH VIÊN
+      memberIds.forEach((memberId) => {
+        // Không cần gửi thông báo cho chính người gửi
+        if (memberId !== payload.senderId) {
+          this.server
+            .to(`user_${memberId}`)
+            .emit('new-workspace-chat-notification', {
+              workspaceId: targetId,
+              message: savedMessage,
+              senderId: payload.senderId,
+            });
+        }
+      });
+    }
   }
 }

@@ -390,6 +390,14 @@ export class WorkspaceService {
 
     return this.memberRepository.save(member);
   }
+  async getWorkspaceMemberIds(workspaceId: string): Promise<string[]> {
+    // Ví dụ dùng Prisma để tìm các thành viên thuộc workspace:
+    const members = await this.memberRepository.find({
+      where: { workspaceId },
+      select: { userId: true },
+    });
+    return members.map((m) => m.userId);
+  }
 
   async updateMemberRole(
     workspaceId: string,
