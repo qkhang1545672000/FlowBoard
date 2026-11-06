@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -18,9 +19,8 @@ export class QueryMessageDto {
   targetId: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  page?: number = 1;
+  @IsString()
+  cursor?: string;
 
   @IsOptional()
   @Type(() => Number)

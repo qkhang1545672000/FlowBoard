@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { Message } from './entities/message.entity';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { QueryMessageDto } from './dto/query-message.dto';
@@ -80,8 +80,7 @@ export class ChatService {
   }
 
   async getMessages(query: QueryMessageDto, userId?: string) {
-    const { scope, targetId, limit = 20, page = 1 } = query;
-    const skip = (page - 1) * limit;
+    const { scope, targetId, limit = 20, cursor } = query;
 
     const whereCondition: any = { scope };
 
@@ -89,11 +88,17 @@ export class ChatService {
     if (scope === ChatScope.BOARD) whereCondition.boardId = targetId;
     if (scope === ChatScope.WORKSPACE) whereCondition.workspaceId = targetId;
 
-    const [items, total] = await this.messageRepo.findAndCount({
+    // Nếu có cursor (thời điểm tin nhắn cuối của lần fetch trước), lấy các tin cũ hơn (< cursor)
+    if (cursor) {
+      whereCondition.createdAt = LessThan(new Date(cursor));
+    }
+
+    // Lấy dư ra 1 tin nhắn để check xem còn trang sau hay không (hasMore / nextCursor)
+    const takeLimit = Number(limit) + 1;
+
+    const items = await this.messageRepo.find({
       where: whereCondition,
-      relations: {
-        sender: true,
-      },
+      relations: { sender: true },
       select: {
         id: true,
         content: true,
@@ -103,24 +108,26 @@ export class ChatService {
         boardId: true,
         taskId: true,
         createdAt: true,
-        sender: {
-          id: true,
-          name: true,
-          email: true,
-          image: true,
-        },
+        sender: { id: true, name: true, email: true, image: true },
       },
-      order: { createdAt: 'DESC' }, // Lấy tin nhắn mới nhất trước để phân trang
-      take: limit,
-      skip,
+      order: { createdAt: 'DESC' }, // Lấy từ mới nhất trở về cũ
+      take: takeLimit,
     });
 
+    let nextCursor: string | null = null;
+    let hasMore = false;
+
+    if (items.length > Number(limit)) {
+      hasMore = true;
+      items.pop(); // Bỏ phần tử thừa dùng để check
+      const lastItem = items[items.length - 1];
+      nextCursor = lastItem.createdAt.toISOString();
+    }
+
     return {
-      items: items.reverse(), // Đảo ngược lại thứ tự cũ -> mới cho UI Chat
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      items: items.reverse(), // Đảo lại theo thứ tự cũ -> mới cho UI chat
+      nextCursor,
+      hasMore,
     };
   }
 }
