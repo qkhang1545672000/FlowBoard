@@ -37,6 +37,7 @@ import {
   NotificationType,
 } from 'src/shared/types/notification.enum';
 import { NotificationService } from '../notification/notification.service';
+import { Message } from '../chat/entities/message.entity';
 interface BoardRaw {
   id: string;
   title: string;
@@ -56,6 +57,8 @@ export class WorkspaceService {
     private readonly invitationRepository: Repository<WorkspaceInvitation>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Message)
+    private readonly messageRepository: Repository<Message>,
     @InjectRepository(Board)
     private readonly boardRepository: Repository<Board>,
     private readonly emailService: EmailService,
@@ -845,5 +848,60 @@ export class WorkspaceService {
       workspaceId: invitation.workspaceId,
       slug: workspaceDetail.slug,
     };
+  }
+
+  /**
+   * Cập nhật mốc thời gian xem mới nhất cho thành viên trong workspace
+   */
+  async getUnreadWorkspaceIds(userId: string): Promise<string[]> {
+    // 1. Lấy danh sách tất cả các workspace mà user này tham gia
+    const members = await this.memberRepository.find({
+      where: { userId },
+    });
+
+    const unreadIds: string[] = [];
+
+    for (const member of members) {
+      // 2. Tìm tin nhắn mới nhất trong workspace này
+      const latestMessage = await this.messageRepository.findOne({
+        where: { workspaceId: member.workspaceId },
+        order: { createdAt: 'DESC' },
+      });
+
+      // 3. Điều kiện để tính là chưa đọc:
+      // - Workspace có tin nhắn
+      // - Tin nhắn đó KHÔNG phải do chính user này gửi
+      // - Thời gian tin nhắn mới hơn mốc lastReadAt (hoặc lastReadAt là null mà đã có tin nhắn)
+      if (latestMessage && latestMessage.senderId !== userId) {
+        const lastReadTime = member.lastReadAt
+          ? new Date(member.lastReadAt).getTime()
+          : 0;
+        const messageTime = new Date(latestMessage.createdAt).getTime();
+
+        if (messageTime > lastReadTime) {
+          unreadIds.push(member.workspaceId);
+        }
+      }
+    }
+
+    return unreadIds;
+  }
+
+  async updateLastRead(
+    workspaceId: string,
+    userId: string,
+  ): Promise<WorkspaceMember> {
+    const member = await this.memberRepository.findOne({
+      where: { workspaceId, userId },
+    });
+
+    if (!member) {
+      throw new NotFoundException(
+        'Không tìm thấy thành viên trong workspace này',
+      );
+    }
+
+    member.lastReadAt = new Date(); // Ghi nhận thời điểm hiện tại
+    return await this.memberRepository.save(member);
   }
 }

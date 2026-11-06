@@ -78,7 +78,15 @@ export class WorkspaceController {
     const workspace = await this.workspaceService.createWorkspace(user.id, dto);
     return this.mapWorkspaceResponse(workspace);
   }
-
+  @Get('unread-status')
+  @ApiOperation({
+    summary: 'Lấy danh sách các Workspace có tin nhắn chưa đọc khi đăng nhập',
+  })
+  async getUnreadWorkspaces(@CurrentUser() user: User) {
+    const unreadWorkspaceIds =
+      await this.workspaceService.getUnreadWorkspaceIds(user.id);
+    return { unreadWorkspaceIds };
+  }
   @Get()
   @ApiOkResponse({ type: [WorkspaceResponseDto] })
   async getMyWorkspaces(
@@ -226,5 +234,19 @@ export class WorkspaceController {
     @CurrentUser() user: User,
   ) {
     return this.workspaceService.acceptInvitation(token, user);
+  }
+
+  @Patch(':id/read')
+  @ApiOperation({
+    summary: 'Cập nhật thời gian đọc/xem cuối cùng trong Workspace',
+    operationId: 'workspace_update_last_read',
+  })
+  @ApiOkResponse({ description: 'Cập nhật thành công' })
+  @HttpCode(HttpStatus.OK)
+  async updateLastRead(
+    @Param('id') workspaceId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.workspaceService.updateLastRead(workspaceId, user.id);
   }
 }

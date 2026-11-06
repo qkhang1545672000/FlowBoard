@@ -35,6 +35,9 @@ export class WorkspaceMember extends BaseUuidEntity {
   })
   role: WorkspaceRole;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  lastReadAt: Date | null;
+
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 }
