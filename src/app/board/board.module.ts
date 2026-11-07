@@ -6,9 +6,14 @@ import { BoardController } from './board.controller';
 import { BoardService } from './board.service';
 import { BoardMember } from './entities/board-member.entity';
 import { BoardGateway } from './board.gateway';
+import { TaskMember } from '../task/entities/task-member.entity';
+import { WorkspaceModule } from '../workspace/workspace.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Board, BoardMember])],
+  imports: [
+    TypeOrmModule.forFeature([Board, BoardMember, TaskMember]),
+    WorkspaceModule,
+  ],
   controllers: [BoardController],
   providers: [BoardService, BoardGateway],
   exports: [BoardService],

@@ -179,7 +179,7 @@ export class AuthController {
     @Body() updateUserDto: UpdateUserDto,
   ) {
     let imageUrl = undefined;
-    console.log('sdfddddd2222222222222', file);
+
     // Nếu người dùng có chọn file ảnh mới để tải lên
     if (file) {
       const uploadResult = await this.cloudinaryService.uploadImage(file);

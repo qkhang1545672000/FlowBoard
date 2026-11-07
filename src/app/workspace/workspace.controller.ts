@@ -114,8 +114,11 @@ export class WorkspaceController {
   @ApiOperation({
     summary: 'Lấy chi tiết Workspace và danh sách Boards theo ID',
   })
-  async getWorkspaceDetail(@Param('id') id: string) {
-    return this.workspaceService.getWorkspaceWithBoards(id);
+  async getWorkspaceDetail(
+    @CurrentUser() currentUser: User,
+    @Param('id') id: string,
+  ) {
+    return this.workspaceService.getWorkspaceWithBoards(currentUser, id);
   }
 
   @Patch(':id')

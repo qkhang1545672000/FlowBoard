@@ -234,7 +234,7 @@ export class WorkspaceService {
     }
   }
 
-  async getWorkspaceWithBoards(workspaceId: string) {
+  async getWorkspaceWithBoards(user: User, workspaceId: string) {
     // 1. Lấy thông tin Workspace kèm danh sách thành viên
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
@@ -265,7 +265,7 @@ export class WorkspaceService {
       throw new NotFoundException('Không tìm thấy Workspace');
     }
 
-    // 2. Lấy danh sách ID của tất cả user trong workspace (Thêm ?? [] để an toàn tuyệt đối)
+    // 2. Lấy danh sách ID của tất cả user trong workspace
     const membersList = workspace.members ?? [];
     const userIds = membersList.map((m) => m.user.id);
 
@@ -273,10 +273,27 @@ export class WorkspaceService {
     const onlineStatusMap =
       await this.sessionAuthService.checkUsersOnlineStatus(userIds);
 
-    // 4. Truy vấn danh sách Boards trong Workspace
-    const boards = await this.boardRepository
+    // Kiểm tra xem user hiện tại có phải là ADMIN hoặc OWNER của workspace này không
+    const currentMember = membersList.find((m) => m.user.id === user.id);
+    const isAdminOrOwner =
+      currentMember && ['ADMIN', 'OWNER'].includes(currentMember.role);
+
+    // 4. Truy vấn danh sách Boards trong Workspace (Lọc theo quyền user)
+    const boardQuery = this.boardRepository
       .createQueryBuilder('board')
-      .where('board.workspaceId = :workspaceId', { workspaceId })
+      .where('board.workspaceId = :workspaceId', { workspaceId });
+
+    // Nếu không phải Admin/Owner của Workspace, chỉ lấy những board mà user này là thành viên
+    if (!isAdminOrOwner) {
+      boardQuery.innerJoin(
+        'board_members',
+        'bm_filter',
+        'bm_filter.board_id = board.id AND bm_filter.user_id = :userId',
+        { userId: user.id },
+      );
+    }
+
+    const boards = await boardQuery
       .select([
         'board.id AS id',
         'board.title AS title',

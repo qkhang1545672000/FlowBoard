@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -15,6 +16,7 @@ import {
   calculateDynamicProgress,
   calculateTimeRemaining,
 } from 'src/shared/helpers/caculaterDate';
+import { TaskMember } from '../task/entities/task-member.entity';
 
 @Injectable()
 export class BoardService {
@@ -23,12 +25,22 @@ export class BoardService {
     private readonly boardRepository: Repository<Board>,
     @InjectRepository(BoardMember)
     private readonly boardMemberRepository: Repository<BoardMember>,
+    @InjectRepository(TaskMember)
+    private readonly taskMemberRepository: Repository<TaskMember>,
     private readonly dataSource: DataSource,
   ) {}
 
   /**
    * Tạo mới 1 Board và tự động thêm User tạo vào làm ADMIN của Board đó
    */
+
+  async isCheckMemberBoard(boardId: string, userId: string): Promise<boolean> {
+    const member = await this.boardMemberRepository.findOne({
+      where: { boardId, userId },
+    });
+
+    return !!member; // Trả về true nếu là thành viên, ngược lại trả về false
+  }
   async create(createBoardDto: CreateBoardDto, currentUserId: string) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -268,12 +280,28 @@ export class BoardService {
       const existingMembers = board.members || [];
       const existingUserIds = existingMembers.map((m) => m.userId);
 
-      // A. Tìm các userId có trong cũ nhưng KHÔNG có trong danh sách mới -> XÓA
+      // A. Tìm các userId có trong cũ nhưng KHÔNG có trong danh sách mới -> Chuẩn bị XÓA
       const userIdsToRemove = existingUserIds.filter(
         (userId) => !memberIds.includes(userId),
       );
 
       if (userIdsToRemove.length > 0) {
+        // 🟢 KIỂM TRA: Nếu thành viên chuẩn bị xóa vẫn đang tham gia task nào đó trong board thì báo lỗi
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const assignedTaskCount = await this.taskMemberRepository
+          .createQueryBuilder('tm')
+          .innerJoin('tm.task', 'task')
+          .innerJoin('task.column', 'column')
+          .where('column.boardId = :boardId', { boardId: id })
+          .andWhere('tm.userId IN (:...userIdsToRemove)', { userIdsToRemove })
+          .getCount();
+
+        if (assignedTaskCount > 0) {
+          throw new BadRequestException(
+            'Không thể xóa thành viên đang tham gia task trong board. Vui lòng gỡ họ khỏi các task trước khi xóa khỏi board.',
+          );
+        }
+
         await this.boardMemberRepository.delete({
           boardId: id,
           userId: In(userIdsToRemove),
@@ -294,7 +322,6 @@ export class BoardService {
             role: isLeader
               ? BoardMemberRole.BOARD_LEADER
               : BoardMemberRole.BOARD_MEMBER,
-            // Lưu ý: Thay BoardMemberRole bằng tên enum thực tế của bạn nếu khác (ví dụ: LEADER, MEMBER)
           });
         });
         await this.boardMemberRepository.save(newBoardMembers);
