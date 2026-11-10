@@ -26,4 +26,26 @@ export class CloudinaryService {
       streamifier.createReadStream(file.buffer).pipe(upload);
     });
   }
+
+  uploadFile(
+    file: Express.Multer.File,
+  ): Promise<UploadApiResponse | UploadApiErrorResponse> {
+    return new Promise((resolve, reject) => {
+      const upload = cloudinary.uploader.upload_stream(
+        {
+          folder: 'flowboard_uploads',
+          resource_type: 'auto', // 'auto' giúp Cloudinary tự phân loại file (image, raw, video)
+        },
+        (error, result) => {
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+          if (error) return reject(error);
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+          resolve(result!);
+        },
+      );
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      streamifier.createReadStream(file.buffer).pipe(upload);
+    });
+  }
 }

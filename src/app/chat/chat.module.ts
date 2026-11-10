@@ -5,9 +5,14 @@ import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { ChatGateway } from './chat.gateway';
 import { WorkspaceModule } from '../workspace/workspace.module';
+import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Message]), WorkspaceModule],
+  imports: [
+    TypeOrmModule.forFeature([Message]),
+    WorkspaceModule,
+    CloudinaryModule,
+  ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway],
   exports: [ChatService],

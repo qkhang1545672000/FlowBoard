@@ -9,17 +9,20 @@ import { Message } from './entities/message.entity';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { QueryMessageDto } from './dto/query-message.dto';
 import { ChatScope } from 'src/shared/types/chat-scope.enum';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class ChatService {
   constructor(
     @InjectRepository(Message)
     private readonly messageRepo: Repository<Message>,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async createMessage(
     senderId: string,
     dto: CreateMessageDto,
+    files?: Express.Multer.File[], // 🟢 Nhận danh sách file từ Controller nếu có
   ): Promise<Message> {
     const { scope, workspaceId, boardId, taskId, content, attachments } = dto;
 
@@ -36,6 +39,25 @@ export class ChatService {
       );
     }
 
+    // 🟢 Xử lý upload file/ảnh lên Cloudinary nếu người dùng có đính kèm file
+    let uploadedAttachments = attachments
+      ? Array.isArray(attachments)
+        ? attachments
+        : [attachments]
+      : [];
+
+    if (files && files.length > 0) {
+      const uploadPromises = files.map(
+        (file) => this.cloudinaryService.uploadFile(file), // Hoặc uploadImage tùy loại file
+      );
+      const uploadResults = await Promise.all(uploadPromises);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      const fileUrls = uploadResults.map((res) => res.secure_url);
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      uploadedAttachments = [...uploadedAttachments, ...fileUrls];
+    }
+
     const message = this.messageRepo.create({
       senderId,
       scope,
@@ -43,7 +65,7 @@ export class ChatService {
       boardId: scope === ChatScope.BOARD ? boardId : null,
       taskId: scope === ChatScope.TASK ? taskId : null,
       content,
-      attachments: attachments || null,
+      attachments: uploadedAttachments.length > 0 ? uploadedAttachments : null,
     });
 
     const savedMessage = await this.messageRepo.save(message);

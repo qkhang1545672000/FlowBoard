@@ -6,6 +6,8 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,6 +21,7 @@ import { QueryMessageDto } from './dto/query-message.dto';
 import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
 import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
+import { FilesInterceptor } from '@nestjs/platform-express';
 
 @UseGuards(SessionAuthGuard)
 @ApiTags('Chats')
@@ -28,12 +31,14 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Post()
+  @UseInterceptors(FilesInterceptor('files'))
   @ApiOperation({ summary: 'Gửi tin nhắn mới (Workspace, Board hoặc Task)' })
   sendMessage(
     @Body() createMessageDto: CreateMessageDto,
     @CurrentUser() user: User,
+    @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.chatService.createMessage(user.id, createMessageDto);
+    return this.chatService.createMessage(user.id, createMessageDto, files);
   }
 
   @Get()
