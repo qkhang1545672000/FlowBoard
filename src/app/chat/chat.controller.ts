@@ -5,7 +5,6 @@ import {
   Body,
   Query,
   UseGuards,
-  ParseUUIDPipe,
   UseInterceptors,
   UploadedFiles,
 } from '@nestjs/common';
@@ -22,23 +21,47 @@ import { SessionAuthGuard } from 'src/core/guards/session-auth.guard';
 import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { ChatGateway } from './chat.gateway'; // 🟢 Import ChatGateway
 
 @UseGuards(SessionAuthGuard)
 @ApiTags('Chats')
 @ApiBearerAuth()
 @Controller('chats')
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly chatGateway: ChatGateway, // 🟢 Inject ChatGateway vào Controller
+  ) {}
 
   @Post()
   @UseInterceptors(FilesInterceptor('files'))
   @ApiOperation({ summary: 'Gửi tin nhắn mới (Workspace, Board hoặc Task)' })
-  sendMessage(
+  async sendMessage(
     @Body() createMessageDto: CreateMessageDto,
     @CurrentUser() user: User,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.chatService.createMessage(user.id, createMessageDto, files);
+    // 1. Lưu tin nhắn và upload file lên Cloudinary
+    const savedMessage = await this.chatService.createMessage(
+      user.id,
+      createMessageDto,
+      files,
+    );
+
+    // 2. Xác định targetId và Room tương ứng để Broadcast Realtime
+    const targetId =
+      createMessageDto.taskId ||
+      createMessageDto.boardId ||
+      createMessageDto.workspaceId;
+
+    if (targetId && createMessageDto.scope) {
+      const roomName = `chat:${createMessageDto.scope.toLowerCase()}:${targetId}`;
+
+      // 🟢 BẮT BUỘC: Gửi sự kiện new-message ra toàn bộ phòng qua WebSocket để user2 nhận được file/ảnh ngay lập tức
+      this.chatGateway.server.to(roomName).emit('new-message', savedMessage);
+    }
+
+    return savedMessage;
   }
 
   @Get()

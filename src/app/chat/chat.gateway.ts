@@ -117,7 +117,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Tạm thời nếu bạn chưa viết hàm lấy memberIds, bạn có thể truyền qua payload hoặc query DB:
       const memberIds: string[] =
         await this.workspaceService.getWorkspaceMemberIds(targetId);
-      console.log('mmmmmmmmmmmmmmsadc', memberIds);
+
       // Gửi thông báo đến "kênh chung cá nhân" (user_{id}) của TỪNG THÀNH VIÊN
       memberIds.forEach((memberId) => {
         // Không cần gửi thông báo cho chính người gửi
