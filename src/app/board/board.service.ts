@@ -17,6 +17,8 @@ import {
   calculateTimeRemaining,
 } from 'src/shared/helpers/caculaterDate';
 import { TaskMember } from '../task/entities/task-member.entity';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityLog } from '../activity-log/entities/activity-log.entity';
 
 @Injectable()
 export class BoardService {
@@ -27,7 +29,10 @@ export class BoardService {
     private readonly boardMemberRepository: Repository<BoardMember>,
     @InjectRepository(TaskMember)
     private readonly taskMemberRepository: Repository<TaskMember>,
+    @InjectRepository(ActivityLog)
+    private readonly activityLogRepository: Repository<ActivityLog>,
     private readonly dataSource: DataSource,
+    private readonly activityLogService: ActivityLogService,
   ) {}
 
   /**
@@ -188,7 +193,6 @@ export class BoardService {
    * Lấy chi tiết 1 Board cùng danh sách Columns và Members
    */
   async findBoardByID(boardId: string, userId: string) {
-    // Tìm board kèm theo điều kiện user phải là thành viên của Workspace
     const board = await this.boardRepository.findOne({
       where: {
         id: boardId,
@@ -199,7 +203,6 @@ export class BoardService {
         },
       },
       relations: {
-        // PHẢI THÊM WORKSPACE VÀO ĐÂY ĐỂ TYPEORM JOIN ĐÚNG ĐIỀU KIỆN WHERE BÊN TRÊN
         workspace: {
           members: true,
         },
@@ -223,31 +226,64 @@ export class BoardService {
       );
     }
 
-    // --- SẮP XẾP CÁC COLUMN VÀ TASK THEO POSITION TĂNG DẦN (ASC) ---
+    const now = new Date().getTime();
+
+    // --- SẮP XẾP VÀ DUYỆT CÁC COLUMN & TASK ---
     if (board.columns) {
-      // Sắp xếp danh sách Column theo position tăng dần
       board.columns.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-      board.columns.forEach((column) => {
+      for (const column of board.columns) {
         if (column.tasks) {
-          // Sắp xếp danh sách Task trong từng Column theo position tăng dần
           column.tasks.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-          column.tasks.forEach((task) => {
-            // Gán tiến độ (%) dựa vào startDate và dueDate
+          for (const task of column.tasks) {
+            // Gán tiến độ (%)
             (task as any).progress = calculateDynamicProgress(
               task.startDate,
               task.dueDate,
             );
 
-            // Gán thời gian còn lại dạng chữ dựa vào dueDate
+            // Gán thời gian còn lại
             (task as any).timeRemaining = calculateTimeRemaining(
               task.startDate,
               task.dueDate,
             );
-          });
+
+            // --- KIỂM TRA NẾU TASK ĐÃ QUÁ HẠN ĐỂ GHI LOG ---
+            if (task.dueDate) {
+              const endTime = new Date(task.dueDate).getTime();
+
+              if (now >= endTime && !task.isCompleted) {
+                // 1. Kiểm tra xem trong DB đã có log 'TASK_OVERDUE' của task này chưa
+                const existingLog = await this.activityLogRepository.findOne({
+                  where: {
+                    entityId: task.id,
+                    action: 'TASK_OVERDUE',
+                  },
+                });
+
+                // 2. Nếu chưa có thì mới tiến hành tạo log mới
+                if (!existingLog) {
+                  this.activityLogService
+                    .create(userId, {
+                      boardId: board.id,
+                      action: 'TASK_OVERDUE',
+                      entityType: 'TASK',
+                      entityId: task.id,
+                      details: {
+                        title: task.title,
+                        dueDate: task.dueDate,
+                      },
+                    })
+                    .catch((err) => {
+                      console.error('Lỗi ghi activity log quá hạn:', err);
+                    });
+                }
+              }
+            }
+          }
         }
-      });
+      }
     }
 
     return board;
