@@ -23,6 +23,10 @@ export class MessageResponseDto {
   @Expose()
   taskId?: string | null;
 
+  @ApiProperty({ required: false, nullable: true })
+  @Expose()
+  recipientId?: string | null; // 🟢 Thêm trường này cho chat 1-1 (DIRECT)
+
   @ApiProperty()
   @Expose()
   content: string;
@@ -35,6 +39,11 @@ export class MessageResponseDto {
   @Expose()
   @Type(() => UserResponseDto)
   sender: UserResponseDto;
+
+  @ApiProperty({ type: () => UserResponseDto, required: false, nullable: true })
+  @Expose()
+  @Type(() => UserResponseDto)
+  recipient?: UserResponseDto | null; // 🟢 Thêm thông tin User nhận nếu là chat 1-1
 
   @ApiProperty()
   @Expose()

@@ -10,6 +10,7 @@ import { Task } from 'src/app/task/entities/task.entity';
 @Index(['scope', 'workspaceId'])
 @Index(['scope', 'boardId'])
 @Index(['scope', 'taskId'])
+@Index(['scope', 'recipientId']) // 👈 Thêm index để tối ưu tốc độ query tin nhắn 1-1
 export class Message extends BaseUuidEntity {
   @Column({ type: 'uuid' })
   senderId: string;
@@ -41,6 +42,15 @@ export class Message extends BaseUuidEntity {
   @ManyToOne(() => Task, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'task_id' })
   task: Task | null;
+
+  // 👇 --- CÁC TRƯỜNG BỔ SUNG CHO CHAT 1-1 (DIRECT MESSAGE) --- 👇
+  @Column({ type: 'uuid', nullable: true })
+  recipientId: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'recipient_id' })
+  recipient: User | null;
+  // -----------------------------------------------------------
 
   @Column({ type: 'text' })
   content: string;

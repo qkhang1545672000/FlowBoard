@@ -12,13 +12,14 @@ import { ChatService } from './chat.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { WorkspaceService } from '../workspace/workspace.service';
 
+// 1. Mở rộng scope cho phép DIRECT
 interface JoinChatRoomPayload {
-  scope: 'WORKSPACE' | 'BOARD' | 'TASK';
-  targetId: string;
+  scope: 'WORKSPACE' | 'BOARD' | 'TASK' | 'DIRECT';
+  targetId: string; // Có thể là workspaceId, boardId, taskId hoặc recipientId (userId của người kia)
 }
 
 interface LeaveChatRoomPayload {
-  scope: 'WORKSPACE' | 'BOARD' | 'TASK';
+  scope: 'WORKSPACE' | 'BOARD' | 'TASK' | 'DIRECT';
   targetId: string;
 }
 
@@ -45,7 +46,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
     if (userId) {
       client.join(`user_${userId}`);
-      console.log(`✅ Đã đưa user vào phòng: user_${userId}`);
+      console.log(`✅ Đã đưa user vào phòng cá nhân: user_${userId}`);
     } else {
       console.log(`❌ KHÔNG TÌM THẤY userId trong query của client!`);
     }
@@ -99,38 +100,59 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       payload.dto,
     );
 
-    // 2. Xác định targetId tương ứng
-    const targetId =
-      payload.dto.taskId || payload.dto.boardId || payload.dto.workspaceId;
-
-    if (!targetId) return;
-
-    const roomName = this.getRoomName(payload.dto.scope, targetId);
-
-    // 3. Broadcast tin nhắn mới tới TẤT CẢ mọi người trong Room (bao gồm cả sender để sync)
-    this.server.to(roomName).emit('new-message', savedMessage);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
-    if (payload.dto.scope === 'WORKSPACE') {
-      // Lấy danh sách tất cả các thành viên thuộc workspace này từ Database (qua ChatService)
-      // Ví dụ: const memberIds = await this.chatService.getWorkspaceMemberIds(targetId);
+    if (payload.dto.scope === 'DIRECT') {
+      // ==========================================
+      // XỬ LÝ RIÊNG CHO CHAT 1-1 (DIRECT MESSAGE)
+      // ==========================================
+      const recipientId = payload.dto.recipientId;
+      if (!recipientId) return;
 
-      // Tạm thời nếu bạn chưa viết hàm lấy memberIds, bạn có thể truyền qua payload hoặc query DB:
-      const memberIds: string[] =
-        await this.workspaceService.getWorkspaceMemberIds(targetId);
+      // Gửi đến room cá nhân của người nhận và người gửi để sync realtime giữa các thiết bị
+      this.server.to(`user_${recipientId}`).emit('new-message', savedMessage);
+      this.server
+        .to(`user_${payload.senderId}`)
+        .emit('new-message', savedMessage);
 
-      // Gửi thông báo đến "kênh chung cá nhân" (user_{id}) của TỪNG THÀNH VIÊN
-      memberIds.forEach((memberId) => {
-        // Không cần gửi thông báo cho chính người gửi
-        if (memberId !== payload.senderId) {
-          this.server
-            .to(`user_${memberId}`)
-            .emit('new-workspace-chat-notification', {
-              workspaceId: targetId,
-              message: savedMessage,
-              senderId: payload.senderId,
-            });
-        }
-      });
+      // (Tùy chọn) Gửi thêm thông báo chuông/notification nếu cần
+      this.server
+        .to(`user_${recipientId}`)
+        .emit('new-direct-chat-notification', {
+          message: savedMessage,
+          senderId: payload.senderId,
+        });
+    } else {
+      // ==========================================
+      // XỬ LÝ CHO WORKSPACE / BOARD / TASK CHAT
+      // ==========================================
+      const targetId =
+        payload.dto.taskId || payload.dto.boardId || payload.dto.workspaceId;
+
+      if (!targetId) return;
+
+      const roomName = this.getRoomName(payload.dto.scope, targetId);
+
+      // Broadcast tin nhắn mới tới TẤT CẢ mọi người trong Room chung
+      this.server.to(roomName).emit('new-message', savedMessage);
+
+      // Nếu là Workspace, gửi thêm thông báo notification riêng cho từng thành viên
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
+      if (payload.dto.scope === 'WORKSPACE') {
+        const memberIds: string[] =
+          await this.workspaceService.getWorkspaceMemberIds(targetId);
+
+        memberIds.forEach((memberId) => {
+          if (memberId !== payload.senderId) {
+            this.server
+              .to(`user_${memberId}`)
+              .emit('new-workspace-chat-notification', {
+                workspaceId: targetId,
+                message: savedMessage,
+                senderId: payload.senderId,
+              });
+          }
+        });
+      }
     }
   }
 }

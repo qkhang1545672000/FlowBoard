@@ -51,6 +51,7 @@ export class BoardController {
       boardId,
       user.id,
     );
+    console.log('isssssssssssssssssssss', isCheckMemberBoard);
     if (!isCheckMemberBoard) {
       throw new ForbiddenException(
         'Bạn không phải là thành viên của board này nên không có quyền thực hiện thao tác.',
