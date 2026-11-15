@@ -31,10 +31,6 @@ export class CreateMessageDto {
   @IsString()
   @IsNotEmpty()
   content: string;
-
-  @IsOptional()
-  @IsArray()
-  attachments?: Array<{ url: string; name?: string; type?: string }>;
 }
 
 export class QueryMessageDto {

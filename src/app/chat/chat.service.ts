@@ -24,15 +24,7 @@ export class ChatService {
     dto: CreateMessageDto,
     files?: Express.Multer.File[],
   ): Promise<Message> {
-    const {
-      scope,
-      workspaceId,
-      boardId,
-      taskId,
-      recipientId,
-      content,
-      attachments,
-    } = dto;
+    const { scope, workspaceId, boardId, taskId, recipientId, content } = dto;
 
     // Validate khớp Scope
     if (scope === ChatScope.TASK && !taskId) {
@@ -51,22 +43,18 @@ export class ChatService {
       throw new BadRequestException('recipientId is required for DIRECT scope');
     }
 
-    let uploadedAttachments = attachments
-      ? Array.isArray(attachments)
-        ? attachments
-        : [attachments]
-      : [];
+    let uploadedAttachments = [];
 
     if (files && files.length > 0) {
       const uploadPromises = files.map((file) =>
         this.cloudinaryService.uploadFile(file),
       );
       const uploadResults = await Promise.all(uploadPromises);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
       const fileUrls = uploadResults.map((res: any) => res.secure_url);
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      uploadedAttachments = [...uploadedAttachments, ...fileUrls];
+      uploadedAttachments = [...fileUrls];
     }
 
     const message = this.messageRepo.create({
@@ -166,11 +154,15 @@ export class ChatService {
       // Xử lý thông thường cho WORKSPACE, BOARD, TASK
       const whereCondition: any = { scope };
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       if (scope === ChatScope.TASK) whereCondition.taskId = targetId;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       if (scope === ChatScope.BOARD) whereCondition.boardId = targetId;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       if (scope === ChatScope.WORKSPACE) whereCondition.workspaceId = targetId;
 
       if (cursor) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         whereCondition.createdAt = LessThan(new Date(cursor));
       }
 

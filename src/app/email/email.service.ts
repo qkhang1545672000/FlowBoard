@@ -25,10 +25,16 @@ export class EmailService {
 
   private createTransporter() {
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: this.configService.get<string>('SMTP_HOST') || 'smtp.gmail.com',
+      port: parseInt(this.configService.get<string>('SMTP_PORT') || '587', 10),
+      secure: false, // false cho cổng 587 (TLS), true nếu dùng cổng 465 (SSL)
       auth: {
         user: this.configService.get<string>('SMTP_USER'),
         pass: this.configService.get<string>('SMTP_PASS'),
+      },
+      tls: {
+        // Bỏ qua lỗi chứng chỉ trên một số môi trường cloud
+        rejectUnauthorized: false,
       },
     });
 
@@ -140,6 +146,7 @@ export class EmailService {
       html,
     });
   }
+
   async sendWorkspaceInvitationEmail(
     to: string,
     inviterName: string,
