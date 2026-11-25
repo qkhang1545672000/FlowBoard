@@ -220,6 +220,12 @@ export class NotificationService {
         const taskTitle = notif.task?.title || 'Công việc';
         dynamicTitle = `Bạn được phân công vào task '${taskTitle}'`;
         break;
+      case NotificationType.WORKSPACE_ACTIVITY:
+        // eslint-disable-next-line no-case-declarations
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        dynamicTitle = notif?.metadata?.title;
+        break;
 
       case NotificationType.CHAT_MENTION:
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, no-case-declarations
@@ -276,5 +282,30 @@ export class NotificationService {
     if (hours < 24) return `${hours} giờ trước`;
     const days = Math.floor(hours / 24);
     return `${days} ngày trước`;
+  }
+
+  async findNotificationByTokenJsonb(token: string) {
+    return this.notificationRepository
+      .createQueryBuilder('notification')
+      .where('notification.metadata @> :meta', {
+        meta: JSON.stringify({ token }),
+      })
+      .getOne();
+  }
+
+  async updateNotificationMetadataContent(
+    notificationId: string,
+    newContent: string,
+  ) {
+    return this.notificationRepository
+      .createQueryBuilder()
+      .update(Notification)
+      .set({
+        metadata: () =>
+          `jsonb_set(COALESCE(metadata, '{}'::jsonb), '{content}', to_jsonb(:newContent::text), true)`,
+      })
+      .where('id = :notificationId', { notificationId })
+      .setParameter('newContent', newContent)
+      .execute();
   }
 }

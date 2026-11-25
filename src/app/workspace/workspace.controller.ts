@@ -174,6 +174,7 @@ export class WorkspaceController {
     @Param('userId') userId: string,
     @Body('role') role: WorkspaceRole,
   ) {
+    console.log('rrrrrrr', role);
     const isOwn = await this.workspaceService.checkIsOwnOrLeaderWorkspace(
       workspaceId,
       user.id,
@@ -237,6 +238,20 @@ export class WorkspaceController {
     @CurrentUser() user: User,
   ) {
     return this.workspaceService.acceptInvitation(token, user);
+  }
+
+  @Post('invitations/refuse')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Chấp nhận lời mời gia nhập Workspace qua Token',
+    operationId: 'workspace_accept_invitation',
+  })
+  @ApiOkResponse({ description: 'Từ chối gia nhập Workspace thành công' })
+  async refuseInvitation(
+    @Query('token') token: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.workspaceService.refuseInvitation(token, user);
   }
 
   @Patch(':id/read')

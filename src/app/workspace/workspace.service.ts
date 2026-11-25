@@ -423,7 +423,7 @@ export class WorkspaceService {
     workspaceId: string,
     userId: string,
     role: WorkspaceRole,
-    currentUser: User, // Truyền thêm thông tin người thực hiện thao tác (nếu có)
+    currentUser: User,
   ): Promise<WorkspaceMember> {
     const workspace = await this.workspaceRepository.findOne({
       where: { id: workspaceId },
@@ -433,8 +433,10 @@ export class WorkspaceService {
       throw new NotFoundException('Workspace không tồn tại');
     }
 
-    // Sử dụng transaction của TypeORM để đảm bảo tính an toàn dữ liệu
-    return await this.memberRepository.manager.transaction(
+    let promotedToLeader = false;
+    let demotedLeaderId: string | null = null;
+
+    const updatedMember = await this.memberRepository.manager.transaction(
       async (transactionalEntityManager) => {
         const memberRepository =
           transactionalEntityManager.getRepository(WorkspaceMember);
@@ -460,10 +462,9 @@ export class WorkspaceService {
 
         const oldRole = member.role;
 
-        // 2. Nếu role mới được gán là LEADER_WORKSPACE, cần xử lý leader cũ
-        let previousLeader: WorkspaceMember | null = null;
+        // 2. Nếu gán role mới là LEADER_WORKSPACE -> hạ cấp leader cũ khác (nếu có)
         if (role === WorkspaceRole.LEADER_WORKSPACE) {
-          previousLeader = await memberRepository.findOne({
+          const previousLeader = await memberRepository.findOne({
             where: { workspaceId, role: WorkspaceRole.LEADER_WORKSPACE },
           });
 
@@ -472,55 +473,68 @@ export class WorkspaceService {
             previousLeader.userId !== userId &&
             previousLeader.role !== WorkspaceRole.OWNER
           ) {
-            previousLeader.role = WorkspaceRole.MEMBER_WORKSPACE; // Hạ cấp leader cũ
+            previousLeader.role = WorkspaceRole.MEMBER_WORKSPACE;
             await memberRepository.save(previousLeader);
+            demotedLeaderId = previousLeader.userId;
           }
         }
 
         // 3. Cập nhật role mới cho thành viên hiện tại
         member.role = role;
-        const updatedMember = await memberRepository.save(member);
+        const savedMember = await memberRepository.save(member);
 
-        // 4. 🔥 BẮN THÔNG BÁO CHO CÁC BÊN LIÊN QUAN
-
-        // Trường hợp A: Người được thăng làm Leader mới
+        // Xác định người được thăng làm Leader mới
         if (
           oldRole !== WorkspaceRole.LEADER_WORKSPACE &&
           role === WorkspaceRole.LEADER_WORKSPACE
         ) {
-          await this.notificationService.createNotificationForScope({
-            senderId: currentUser?.id || null,
-            type: NotificationType.WORKSPACE_ACTIVITY,
-            scope: NotificationScope.DIRECT,
-            specificUserId: userId, // Gửi cho người được làm leader
-            workspaceId: workspaceId,
-            title: `Bạn đã được bổ nhiệm làm Trưởng nhóm (Leader) tại Workspace '${workspace.name}'`,
-            metadata: {
-              workspaceSlug: workspace.slug,
-              action: 'NEW_LEADER',
-            },
-          });
+          promotedToLeader = true;
         }
 
-        // Trường hợp B: Người bị hạ cấp xuống Member (do có Leader mới thay thế)
-        if (previousLeader && previousLeader.userId !== userId) {
-          await this.notificationService.createNotificationForScope({
-            senderId: currentUser?.id || null,
-            type: NotificationType.WORKSPACE_ACTIVITY,
-            scope: NotificationScope.DIRECT,
-            specificUserId: previousLeader.userId, // Gửi cho người bị hạ cấp
-            workspaceId: workspaceId,
-            title: `Bạn đã được chuyển thành Thành viên thường tại Workspace '${workspace.name}'`,
-            metadata: {
-              workspaceSlug: workspace.slug,
-              action: 'DEMOTED_MEMBER',
-            },
-          });
+        // Xác định trường hợp chính người đang giữ LEADER_WORKSPACE bị hạ xuống MEMBER_WORKSPACE
+        if (
+          oldRole === WorkspaceRole.LEADER_WORKSPACE &&
+          role === WorkspaceRole.MEMBER_WORKSPACE
+        ) {
+          demotedLeaderId = userId;
         }
 
-        return updatedMember;
+        return savedMember;
       },
     );
+
+    // 4. Bắn thông báo sau khi transaction commit thành công
+    if (promotedToLeader) {
+      await this.notificationService.createNotificationForScope({
+        senderId: currentUser?.id || null,
+        type: NotificationType.WORKSPACE_ACTIVITY,
+        scope: NotificationScope.DIRECT,
+        specificUserId: userId,
+        workspaceId,
+        metadata: {
+          title: `Bạn đã được bổ nhiệm làm Trưởng nhóm (Leader) tại Workspace '${workspace.name}'`,
+          workspaceSlug: workspace.slug,
+          action: 'NEW_LEADER',
+        },
+      });
+    }
+
+    if (demotedLeaderId) {
+      await this.notificationService.createNotificationForScope({
+        senderId: currentUser?.id || null,
+        type: NotificationType.WORKSPACE_ACTIVITY,
+        scope: NotificationScope.DIRECT,
+        specificUserId: demotedLeaderId,
+        workspaceId,
+        metadata: {
+          title: `Bạn đã được chuyển thành Thành viên thường tại Workspace '${workspace.name}'`,
+          workspaceSlug: workspace.slug,
+          action: 'DEMOTED_MEMBER',
+        },
+      });
+    }
+
+    return updatedMember;
   }
 
   async removeMember(
@@ -734,6 +748,7 @@ export class WorkspaceService {
           token,
           inviterName: inviter.name || inviter.email,
           workspaceName: workspace.name,
+          content: '',
         },
       });
       return {
@@ -775,7 +790,7 @@ export class WorkspaceService {
   // workspace.service.ts
 
   async acceptInvitation(token: string, user: User) {
-    // 1. Tìm thông tin lời mời
+    // 1. Tìm lời mời & workspace trước
     const invitation = await this.invitationRepository.findOne({
       where: { token },
     });
@@ -792,8 +807,17 @@ export class WorkspaceService {
       throw new NotFoundException('Workspace không tồn tại');
     }
 
+    const notifi =
+      await this.notificationService.findNotificationByTokenJsonb(token);
+
     // 2. Kiểm tra trạng thái lời mời
     if (invitation.status === InvitationStatus.ACCEPTED) {
+      if (notifi) {
+        await this.notificationService.updateNotificationMetadataContent(
+          notifi.id,
+          InvitationStatus.ACCEPTED,
+        );
+      }
       return {
         success: true,
         message: 'Bạn đã gia nhập Workspace này trước đó rồi',
@@ -811,7 +835,7 @@ export class WorkspaceService {
       throw new BadRequestException('Lời mời này đã hết hạn');
     }
 
-    // 3. KIỂM TRA XEM USER ĐÃ LÀ THÀNH VIÊN CHƯA (Tránh lỗi duplicate key)
+    // 3. Kiểm tra đã là thành viên chưa
     const existingMember = await this.memberRepository.findOne({
       where: {
         workspaceId: invitation.workspaceId,
@@ -822,6 +846,12 @@ export class WorkspaceService {
     if (existingMember) {
       invitation.status = InvitationStatus.ACCEPTED;
       await this.invitationRepository.save(invitation);
+      if (notifi) {
+        await this.notificationService.updateNotificationMetadataContent(
+          notifi.id,
+          InvitationStatus.ACCEPTED,
+        );
+      }
 
       return {
         success: true,
@@ -831,7 +861,7 @@ export class WorkspaceService {
       };
     }
 
-    // 4. Nếu chưa phải thành viên -> Tạo thành viên mới
+    // 4 & 5. Tạo thành viên + cập nhật lời mời
     const newMember = this.memberRepository.create({
       workspaceId: invitation.workspaceId,
       userId: user.id,
@@ -839,29 +869,132 @@ export class WorkspaceService {
     });
     await this.memberRepository.save(newMember);
 
-    // 5. Đánh dấu lời mời đã được chấp nhận
     invitation.status = InvitationStatus.ACCEPTED;
     await this.invitationRepository.save(invitation);
 
-    // 6. 🔥 BẮN THÔNG BÁO CHO NGƯỜI GỬI (INVITER)
+    // 6. Bắn thông báo cho người mời
     if (invitation.inviterId && invitation.inviterId !== user.id) {
       const userName = user.name || user.email;
       await this.notificationService.createNotificationForScope({
         senderId: user.id,
-        type: NotificationType.WORKSPACE_ACTIVITY, // Hoặc SYSTEM tùy thuộc vào enum của bạn
+        type: NotificationType.WORKSPACE_ACTIVITY,
         scope: NotificationScope.DIRECT,
-        specificUserId: invitation.inviterId, // Gửi trực tiếp cho người mời
+        specificUserId: invitation.inviterId,
         workspaceId: invitation.workspaceId,
         metadata: {
           customTitle: `${userName} đã chấp nhận lời mời tham gia Workspace '${workspaceDetail.name}'`,
           acceptedUserId: user.id,
+          content: InvitationStatus.ACCEPTED,
         },
       });
+    }
+
+    // 7. Cập nhật metadata cho thông báo lời mời gốc nếu tồn tại
+    if (notifi) {
+      await this.notificationService.updateNotificationMetadataContent(
+        notifi.id,
+        InvitationStatus.ACCEPTED,
+      );
     }
 
     return {
       success: true,
       message: 'Gia nhập Workspace thành công',
+      workspaceId: invitation.workspaceId,
+      slug: workspaceDetail.slug,
+    };
+  }
+
+  async refuseInvitation(token: string, user: User) {
+    // 1. Tìm thông tin lời mời & workspace trước
+    const invitation = await this.invitationRepository.findOne({
+      where: { token },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Lời mời không tồn tại hoặc đã bị xóa');
+    }
+
+    const workspaceDetail = await this.workspaceRepository.findOne({
+      where: { id: invitation.workspaceId },
+    });
+
+    if (!workspaceDetail) {
+      throw new NotFoundException('Workspace không tồn tại');
+    }
+
+    const notifi =
+      await this.notificationService.findNotificationByTokenJsonb(token);
+
+    // 2. Kiểm tra trạng thái lời mời
+    if (invitation.status === InvitationStatus.ACCEPTED) {
+      if (notifi) {
+        await this.notificationService.updateNotificationMetadataContent(
+          notifi.id,
+          InvitationStatus.ACCEPTED,
+        );
+      }
+      throw new BadRequestException(
+        'Bạn đã chấp nhận lời mời này trước đó rồi, không thể từ chối',
+      );
+    }
+
+    if (invitation.status === InvitationStatus.DECLINED) {
+      if (notifi) {
+        await this.notificationService.updateNotificationMetadataContent(
+          notifi.id,
+          InvitationStatus.DECLINED,
+        );
+      }
+      return {
+        success: true,
+        message: 'Bạn đã từ chối lời mời này trước đó rồi',
+        workspaceId: invitation.workspaceId,
+        slug: workspaceDetail.slug,
+      };
+    }
+
+    if (
+      invitation.status === InvitationStatus.EXPIRED ||
+      new Date() > invitation.expiresAt
+    ) {
+      invitation.status = InvitationStatus.EXPIRED;
+      await this.invitationRepository.save(invitation);
+      throw new BadRequestException('Lời mời này đã hết hạn');
+    }
+
+    // 3. Đánh dấu lời mời đã bị từ chối (không thêm vào workspace_members)
+    invitation.status = InvitationStatus.DECLINED;
+    await this.invitationRepository.save(invitation);
+
+    // 4. Bắn thông báo cho người gửi lời mời (INVITER)
+    if (invitation.inviterId && invitation.inviterId !== user.id) {
+      const userName = user.name || user.email;
+      await this.notificationService.createNotificationForScope({
+        senderId: user.id,
+        type: NotificationType.WORKSPACE_ACTIVITY,
+        scope: NotificationScope.DIRECT,
+        specificUserId: invitation.inviterId,
+        workspaceId: invitation.workspaceId,
+        metadata: {
+          customTitle: `${userName} đã từ chối lời mời tham gia Workspace '${workspaceDetail.name}'`,
+          declinedUserId: user.id,
+          content: InvitationStatus.DECLINED,
+        },
+      });
+    }
+
+    // 5. Cập nhật metadata cho thông báo lời mời gốc nếu tồn tại
+    if (notifi) {
+      await this.notificationService.updateNotificationMetadataContent(
+        notifi.id,
+        InvitationStatus.DECLINED,
+      );
+    }
+
+    return {
+      success: true,
+      message: 'Đã từ chối lời mời tham gia Workspace',
       workspaceId: invitation.workspaceId,
       slug: workspaceDetail.slug,
     };
