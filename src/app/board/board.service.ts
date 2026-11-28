@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import {
   BadRequestException,
   ConflictException,
@@ -31,6 +32,8 @@ export class BoardService {
     private readonly taskMemberRepository: Repository<TaskMember>,
     @InjectRepository(ActivityLog)
     private readonly activityLogRepository: Repository<ActivityLog>,
+    @InjectRepository(WorkspaceMember)
+    private readonly workspaceMemberRepository: Repository<WorkspaceMember>,
     private readonly dataSource: DataSource,
     private readonly activityLogService: ActivityLogService,
   ) {}
@@ -468,5 +471,200 @@ export class BoardService {
     } catch (error) {
       console.log('lỗi của getUserInBoardMember ', error);
     }
+  }
+
+  async getApproachingOverdueTasks(userId: string, days = 3) {
+    const safeDays = Number.isFinite(days) && days > 0 ? days : 3;
+    const now = new Date();
+    const deadlineLimit = new Date(
+      now.getTime() + safeDays * 24 * 60 * 60 * 1000,
+    );
+
+    // 1. Lấy các workspace mà user là OWNER hoặc LEADER của workspace
+    const wsMembers = await this.workspaceMemberRepository
+      .createQueryBuilder('wm')
+      .where('wm.userId = :userId', { userId })
+      .andWhere('LOWER(wm.role::text) IN (:...wsRoles)', {
+        wsRoles: [
+          'owner',
+          'workspace_owner',
+          'leader_workspace',
+          'workspace_leader',
+        ],
+      })
+      .getMany();
+
+    const privilegedWorkspaceIds = Array.from(
+      new Set(wsMembers.map((wm) => wm.workspaceId)),
+    );
+
+    // 2. Lấy các board mà user là OWNER hoặc BOARD_LEADER
+    const boardMembers = await this.boardMemberRepository
+      .createQueryBuilder('bm')
+      .where('bm.userId = :userId', { userId })
+      .andWhere('LOWER(bm.role::text) IN (:...boardRoles)', {
+        boardRoles: ['owner', 'board_leader', 'leader'],
+      })
+      .getMany();
+
+    const privilegedBoardIdsFromRole = Array.from(
+      new Set(boardMembers.map((bm) => bm.boardId)),
+    );
+
+    if (
+      privilegedWorkspaceIds.length === 0 &&
+      privilegedBoardIdsFromRole.length === 0
+    ) {
+      return [];
+    }
+
+    // 3. Truy vấn các task ĐÃ QUÁ HẠN (dueDate <= now) hoặc SẮP ĐẾN HẠN (now < dueDate <= deadlineLimit)
+    const qb = this.boardRepository
+      .createQueryBuilder('board')
+      .innerJoinAndSelect('board.workspace', 'workspace')
+      .innerJoinAndSelect('board.columns', 'column')
+      .innerJoinAndSelect('column.tasks', 'task')
+      .leftJoinAndSelect('task.members', 'taskMember')
+      .leftJoinAndSelect('taskMember.user', 'memberUser')
+      .leftJoinAndSelect('task.labels', 'label')
+      .where('board.deletedAt IS NULL')
+      .andWhere('column.deletedAt IS NULL')
+      .andWhere('task.deletedAt IS NULL')
+      .andWhere('task.isCompleted = :isCompleted', { isCompleted: false })
+      .andWhere('task.dueDate IS NOT NULL')
+      .andWhere('task.dueDate <= :deadlineLimit', { deadlineLimit });
+
+    if (
+      privilegedWorkspaceIds.length > 0 &&
+      privilegedBoardIdsFromRole.length > 0
+    ) {
+      qb.andWhere(
+        '(board.workspaceId IN (:...wsIds) OR board.id IN (:...boardIds))',
+        {
+          wsIds: privilegedWorkspaceIds,
+          boardIds: privilegedBoardIdsFromRole,
+        },
+      );
+    } else if (privilegedWorkspaceIds.length > 0) {
+      qb.andWhere('board.workspaceId IN (:...wsIds)', {
+        wsIds: privilegedWorkspaceIds,
+      });
+    } else {
+      qb.andWhere('board.id IN (:...boardIds)', {
+        boardIds: privilegedBoardIdsFromRole,
+      });
+    }
+
+    qb.orderBy('task.dueDate', 'ASC');
+
+    const boards = await qb.getMany();
+
+    // 4. Chuẩn hóa danh sách task (bao gồm cả quá hạn & sắp đến hạn)
+    const result = [];
+    const nowMs = now.getTime();
+
+    for (const board of boards) {
+      for (const column of board.columns || []) {
+        for (const task of column.tasks || []) {
+          if (!task.dueDate) continue;
+
+          const dueMs = new Date(task.dueDate).getTime();
+          const isOverdue = dueMs <= nowMs;
+          const diffMs = Math.abs(dueMs - nowMs);
+
+          const totalSeconds = Math.floor(diffMs / 1000);
+          const remainingMinutes = Math.floor(diffMs / (1000 * 60));
+          const remainingSeconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+          const remainingHours = Math.ceil(diffMs / (1000 * 60 * 60));
+          const remainingDays = Math.max(
+            1,
+            Math.ceil(diffMs / (1000 * 60 * 60 * 24)),
+          );
+
+          const prefix = isOverdue ? 'Quá hạn' : 'Còn';
+          let remainingText = '';
+
+          if (diffMs < 60 * 1000) {
+            remainingText = `${prefix} ${remainingSeconds} giây`;
+          } else if (diffMs < 60 * 60 * 1000) {
+            remainingText =
+              remainingSeconds > 0
+                ? `${prefix} ${remainingMinutes} phút ${remainingSeconds} giây`
+                : `${prefix} ${remainingMinutes} phút`;
+          } else if (diffMs < 24 * 60 * 60 * 1000) {
+            const hoursExact = Math.floor(diffMs / (1000 * 60 * 60));
+            const minsInHour = Math.floor(
+              (diffMs % (1000 * 60 * 60)) / (1000 * 60),
+            );
+            remainingText =
+              minsInHour > 0
+                ? `${prefix} ${hoursExact} giờ ${minsInHour} phút`
+                : `${prefix} ${hoursExact} giờ`;
+          } else {
+            const daysExact = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            const hoursInDay = Math.floor(
+              (diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
+            );
+            remainingText =
+              hoursInDay > 0
+                ? `${prefix} ${daysExact} ngày ${hoursInDay} giờ`
+                : `${prefix} ${daysExact} ngày`;
+          }
+
+          result.push({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            priority: task.priority,
+            dueDate: task.dueDate,
+            isCompleted: task.isCompleted,
+            isOverdue,
+            statusType: isOverdue ? 'overdue' : 'approaching',
+            totalSeconds,
+            remainingMinutes,
+            remainingSeconds,
+            remainingHours,
+            remainingDays,
+            remainingText,
+            urgentLevel: isOverdue || remainingHours <= 24 ? 'high' : 'medium',
+            workspace: {
+              id: board.workspace?.id ?? board.workspaceId,
+              name: board.workspace?.name ?? '',
+            },
+            board: {
+              id: board.id,
+              title: board.title,
+            },
+            column: {
+              id: column.id,
+              title: column.title,
+            },
+            labels: task.labels || [],
+            members: (task.members || []).map((tm) => ({
+              id: tm.id,
+              userId: tm.userId,
+              role: tm.role,
+              user: tm.user
+                ? {
+                    id: tm.user.id,
+                    name: tm.user.name,
+                    email: tm.user.email,
+                    image: tm.user.image,
+                  }
+                : null,
+            })),
+          });
+        }
+      }
+    }
+
+    // Sắp xếp task quá hạn lên trước (cũ nhất/trễ nhất trước), sau đó đến task sắp hết hạn gần nhất
+    result.sort(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return result;
   }
 }

@@ -9,6 +9,7 @@ import {
   UseGuards,
   ParseUUIDPipe,
   ForbiddenException,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BoardService } from './board.service';
@@ -34,7 +35,18 @@ export class BoardController {
   create(@Body() createBoardDto: CreateBoardDto, @CurrentUser() user: User) {
     return this.boardService.create(createBoardDto, user.id);
   }
-
+  @Get('approaching-overdue')
+  @ApiOperation({
+    summary:
+      'Lấy các task sắp đến hạn cho workspace_owner, workspace_leader, board_leader',
+  })
+  getApproachingOverdueTasks(
+    @CurrentUser() user: User,
+    @Query('days') days?: string,
+  ) {
+    const parsedDays = days ? Number(days) : 3;
+    return this.boardService.getApproachingOverdueTasks(user.id, parsedDays);
+  }
   // @Get(':workspaceId')
   // @ApiOperation({ summary: 'Lấy danh sách Board theo Workspace ID' })
   // findAllByWorkspace(@Param('workspaceId', ParseUUIDPipe) workspaceId: string) {
@@ -51,7 +63,7 @@ export class BoardController {
       boardId,
       user.id,
     );
-    console.log('isssssssssssssssssssss', isCheckMemberBoard);
+
     if (!isCheckMemberBoard) {
       throw new ForbiddenException(
         'Bạn không phải là thành viên của board này nên không có quyền thực hiện thao tác.',

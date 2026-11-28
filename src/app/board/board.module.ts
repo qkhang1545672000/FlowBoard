@@ -10,10 +10,17 @@ import { TaskMember } from '../task/entities/task-member.entity';
 import { WorkspaceModule } from '../workspace/workspace.module';
 import { ActivityLogModule } from '../activity-log/activity-log.module';
 import { ActivityLog } from '../activity-log/entities/activity-log.entity';
+import { WorkspaceMember } from '../workspace/entities/workspace-member.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Board, BoardMember, TaskMember, ActivityLog]),
+    TypeOrmModule.forFeature([
+      Board,
+      BoardMember,
+      TaskMember,
+      ActivityLog,
+      WorkspaceMember,
+    ]),
     WorkspaceModule,
     ActivityLogModule,
   ],
